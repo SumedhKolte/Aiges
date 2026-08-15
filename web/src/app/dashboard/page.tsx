@@ -43,7 +43,7 @@ export default async function Dashboard() {
       <TopNav name={name} />
 
       <main className="mx-auto max-w-6xl px-5 py-8">
-        <section className="flex flex-wrap items-end justify-between gap-5">
+        <section className="animate-rise flex flex-wrap items-end justify-between gap-5">
           <div>
             <div className="inline-flex items-center gap-2 rounded-full border border-[var(--color-aegis)]/25 bg-[var(--color-aegis)]/8 px-2.5 py-1 text-[10px] font-semibold tracking-[0.12em] text-[var(--color-aegis)] uppercase">
               <span className="animate-pulse-dot h-1.5 w-1.5 rounded-full bg-current" />
@@ -69,7 +69,7 @@ export default async function Dashboard() {
 
         {/* ---------------- balances ---------------- */}
         <section className="mt-7 grid gap-4 sm:grid-cols-3">
-          <Panel className="group relative overflow-hidden p-5">
+          <Panel className="animate-rise-delay-1 group relative overflow-hidden p-5">
             <div className="absolute inset-x-5 top-0 h-px bg-[linear-gradient(90deg,transparent,var(--color-aegis),transparent)] opacity-60 transition-opacity duration-200 group-hover:opacity-100" />
             <SectionLabel>Available</SectionLabel>
             <div className="mt-3">
@@ -80,7 +80,7 @@ export default async function Dashboard() {
             </p>
           </Panel>
 
-          <Panel className="group relative overflow-hidden p-5">
+          <Panel className="animate-rise-delay-2 group relative overflow-hidden p-5">
             <div className="absolute inset-x-5 top-0 h-px bg-[linear-gradient(90deg,transparent,var(--color-aegis),transparent)] opacity-60 transition-opacity duration-200 group-hover:opacity-100" />
             <SectionLabel>Held in escrow</SectionLabel>
             <div className="mt-3">
@@ -95,7 +95,7 @@ export default async function Dashboard() {
             </p>
           </Panel>
 
-          <Panel className="group relative overflow-hidden p-5">
+          <Panel className="animate-rise-delay-3 group relative overflow-hidden p-5">
             <div className="absolute inset-x-5 top-0 h-px bg-[linear-gradient(90deg,transparent,var(--color-aegis),transparent)] opacity-60 transition-opacity duration-200 group-hover:opacity-100" />
             <SectionLabel>Trust score</SectionLabel>
             <div className="tnum mt-3 text-4xl font-semibold text-[var(--color-aegis)]">

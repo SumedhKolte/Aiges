@@ -38,7 +38,7 @@ export default async function LandingPage() {
 
   return (
     <div className="mx-auto max-w-5xl px-5">
-      <header className="flex items-center justify-between py-6">
+      <header className="animate-rise flex items-center justify-between py-6">
         <AegisLogo size={26} />
         <Link
           href={user ? "/dashboard" : "/login"}
@@ -51,25 +51,25 @@ export default async function LandingPage() {
       {/* ---------------- hero ---------------- */}
       <section className="grid gap-10 py-16 sm:py-24 lg:grid-cols-[minmax(0,1.08fr)_minmax(340px,0.72fr)] lg:items-center">
         <div>
-          <div className="inline-flex items-center gap-2 rounded-full border border-[var(--color-aegis)]/25 bg-[var(--color-aegis)]/8 px-3 py-1.5 text-[11px] font-medium tracking-[0.08em] text-[var(--color-aegis)] uppercase">
+          <div className="animate-rise-delay-1 inline-flex items-center gap-2 rounded-full border border-[var(--color-aegis)]/25 bg-[var(--color-aegis)]/8 px-3 py-1.5 text-[11px] font-medium tracking-[0.08em] text-[var(--color-aegis)] uppercase">
             <span className="animate-pulse-dot h-1.5 w-1.5 rounded-full bg-current" />
             Autonomous voice arbitration
           </div>
 
-          <h1 className="mt-6 max-w-3xl text-4xl leading-[1.04] font-semibold tracking-[-0.045em] text-balance sm:text-6xl">
+          <h1 className="animate-rise-delay-2 mt-6 max-w-3xl text-4xl leading-[1.04] font-semibold tracking-[-0.045em] text-balance sm:text-6xl">
             The escrow agent that{" "}
             <span className="text-[var(--color-aegis)]">listens</span> to the deal
             being made.
           </h1>
 
-          <p className="mt-6 max-w-2xl text-[17px] leading-relaxed text-[var(--color-ink-dim)]">
+          <p className="animate-rise-delay-3 mt-6 max-w-2xl text-[17px] leading-relaxed text-[var(--color-ink-dim)]">
             Peer-to-peer work runs on trust that nobody verifies. Aegis joins
             the call as a neutral third party: it drafts the contract from what
             you said, holds the money, catches manipulation, and checks the
             work before it pays.
           </p>
 
-          <div className="mt-9 flex flex-wrap items-center gap-3">
+          <div className="animate-rise-delay-3 mt-9 flex flex-wrap items-center gap-3">
             <Link
               href={user ? "/dashboard" : "/login"}
               className="inline-flex items-center justify-center rounded-lg border border-[var(--color-aegis)] bg-[linear-gradient(135deg,var(--color-aegis),#21b9aa)] px-5 py-3 text-[15px] font-semibold text-[var(--color-void)] shadow-[0_8px_20px_rgb(20_201_184_/_0.16)] transition-[transform,box-shadow,opacity] duration-200 hover:-translate-y-px hover:opacity-95"
@@ -81,7 +81,7 @@ export default async function LandingPage() {
             </span>
           </div>
 
-          <div className="mt-10 grid max-w-xl grid-cols-3 border-t border-[var(--color-line)] pt-5">
+          <div className="animate-rise-delay-3 mt-10 grid max-w-xl grid-cols-3 border-t border-[var(--color-line)] pt-5">
             <div>
               <div className="tnum text-[18px] font-semibold text-[var(--color-ink)]">Live</div>
               <div className="mt-1 text-[11px] tracking-wide text-[var(--color-ink-faint)] uppercase">Term capture</div>
@@ -97,15 +97,15 @@ export default async function LandingPage() {
           </div>
         </div>
 
-        <aside className="animate-rise panel relative overflow-hidden p-5 sm:p-6">
-          <div className="absolute -top-24 -right-16 h-48 w-48 rounded-full bg-[var(--color-aegis)]/12 blur-3xl" />
+        <aside className="animate-rise-delay-2 panel relative overflow-hidden p-5 sm:p-6">
+          <div className="animate-float absolute -top-24 -right-16 h-48 w-48 rounded-full bg-[var(--color-aegis)]/12 blur-3xl" />
           <div className="relative flex items-center justify-between">
             <div>
               <p className="text-[11px] font-semibold tracking-[0.14em] text-[var(--color-ink-faint)] uppercase">Escrow protocol</p>
               <p className="mt-1 text-[14px] text-[var(--color-ink-dim)]">A protected deal, in progress</p>
             </div>
             <span className="inline-flex items-center gap-1.5 rounded-full border border-[var(--color-signal)]/35 bg-[var(--color-signal)]/10 px-2.5 py-1 text-[10px] font-semibold tracking-[0.08em] text-[var(--color-signal)] uppercase">
-              <span className="h-1.5 w-1.5 rounded-full bg-current" />
+              <span className="animate-pulse-dot h-1.5 w-1.5 rounded-full bg-current" />
               Secured
             </span>
           </div>
@@ -121,7 +121,7 @@ export default async function LandingPage() {
                 <p className="tnum mt-0.5 text-[15px] font-semibold text-[var(--color-aegis)]">98%</p>
               </div>
             </div>
-            <div className="mt-5 h-px bg-[var(--color-line)]" />
+            <div className="animate-shimmer mt-5 h-px bg-[var(--color-line)]" />
             <p className="mt-4 text-[11px] tracking-[0.12em] text-[var(--color-ink-faint)] uppercase">Release condition</p>
             <p className="mt-1.5 text-[14px] leading-relaxed text-[var(--color-ink)]">Final website delivered and approved by the buyer.</p>
           </div>
@@ -148,8 +148,8 @@ export default async function LandingPage() {
 
       {/* ---------------- pillars ---------------- */}
       <section className="grid gap-4 sm:grid-cols-3">
-        {PILLARS.map((p) => (
-          <div key={p.title} className="panel group flex flex-col p-5">
+        {PILLARS.map((p, index) => (
+          <div key={p.title} className={`panel group flex flex-col p-5 animate-rise-delay-${index + 1}`}>
             <div className="h-px w-9 bg-[var(--color-aegis)]/60 transition-[width] duration-200 group-hover:w-14" />
             <div className="tnum text-[26px] font-semibold text-[var(--color-aegis)]">
               {p.figure}
