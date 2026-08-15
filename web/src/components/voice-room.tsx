@@ -8,6 +8,7 @@ import { ThreatSimulator } from "@/components/threat-simulator";
 import { LiveTerms, type DraftTerms } from "@/components/live-terms";
 import { VoiceForensics, type Challenge } from "@/components/voice-forensics";
 import { CounterpartyRisk } from "@/components/counterparty-risk";
+import { JoinSeat } from "@/components/join-seat";
 import { Money, Panel, PrimaryButton, SectionLabel, StatusPill } from "@/components/ui";
 
 type RiskEvent = {
@@ -61,17 +62,17 @@ export function VoiceRoom({
   code,
   title,
   role,
-  bothSeated,
   selfId,
-  counterpartyId,
+  initialBuyerId,
+  initialSellerId,
 }: {
   roomId: string;
   code: string;
   title: string;
   role: string;
-  bothSeated: boolean;
   selfId: string;
-  counterpartyId: string | null;
+  initialBuyerId: string | null;
+  initialSellerId: string | null;
 }) {
   const {
     state,
@@ -92,8 +93,16 @@ export function VoiceRoom({
   const [contract, setContract] = useState<Contract | null>(null);
   const [remote, setRemote] = useState<Segment[]>([]);
   const [copied, setCopied] = useState(false);
+  const [linkCopied, setLinkCopied] = useState(false);
   const [terms, setTerms] = useState<DraftTerms | null>(null);
   const [challenges, setChallenges] = useState<Challenge[]>([]);
+  // Seats must be live. The server renders this page once, so whoever opened
+  // the room would otherwise sit on "waiting for the other party" forever —
+  // the counterparty's arrival only ever lands in Postgres, never in props.
+  const [seats, setSeats] = useState<{ buyer: string | null; seller: string | null }>({
+    buyer: initialBuyerId,
+    seller: initialSellerId,
+  });
   const feedRef = useRef<HTMLDivElement>(null);
 
   // ---- live state from Postgres -------------------------------------------
@@ -117,10 +126,17 @@ export function VoiceRoom({
 
     void supabase
       .from("rooms")
-      .select("draft_item, draft_price_cents, draft_condition, draft_confidence")
+      .select(
+        "draft_item, draft_price_cents, draft_condition, draft_confidence, buyer_id, seller_id",
+      )
       .eq("id", roomId)
       .maybeSingle()
-      .then(({ data }) => data && setTerms(data as DraftTerms));
+      .then(({ data }) => {
+        if (!data) return;
+        setTerms(data as DraftTerms);
+        const row = data as { buyer_id: string | null; seller_id: string | null };
+        setSeats({ buyer: row.buyer_id, seller: row.seller_id });
+      });
 
     void supabase
       .from("voice_challenges")
@@ -166,7 +182,14 @@ export function VoiceRoom({
           table: "rooms",
           filter: `id=eq.${roomId}`,
         },
-        (p) => setTerms(p.new as DraftTerms),
+        (p) => {
+          const row = p.new as DraftTerms & {
+            buyer_id: string | null;
+            seller_id: string | null;
+          };
+          setTerms(row);
+          setSeats({ buyer: row.buyer_id, seller: row.seller_id });
+        },
       )
       .on(
         "postgres_changes",
@@ -231,6 +254,19 @@ export function VoiceRoom({
   const halted = riskScore >= 70;
   const live = state === "live";
 
+  const bothSeated = Boolean(seats.buyer && seats.seller);
+  const counterpartyId =
+    seats.buyer === selfId ? seats.seller : seats.seller === selfId ? seats.buyer : null;
+
+  const inviteUrl =
+    typeof window !== "undefined" ? `${window.location.origin}/room/${code}` : "";
+
+  async function copyInvite() {
+    await navigator.clipboard.writeText(inviteUrl);
+    setLinkCopied(true);
+    setTimeout(() => setLinkCopied(false), 1800);
+  }
+
   async function copyCode() {
     await navigator.clipboard.writeText(code);
     setCopied(true);
@@ -245,8 +281,43 @@ export function VoiceRoom({
           <h1 className="text-[22px] font-semibold tracking-tight">{title}</h1>
           <p className="mt-1 text-[14px] text-[var(--color-ink-dim)]">
             You are the {role.toLowerCase()}
-            {!bothSeated && " · waiting for the other party"}
           </p>
+
+          {/* Both seats, live. Whoever opened the room needs to see the other
+              party arrive without reloading the page. */}
+          <div className="mt-2.5 flex items-center gap-2">
+            {(
+              [
+                ["Buyer", seats.buyer],
+                ["Seller", seats.seller],
+              ] as const
+            ).map(([label, id]) => (
+              <span
+                key={label}
+                className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-semibold transition-colors duration-300 ${
+                  id
+                    ? "border-[var(--color-signal)]/40 bg-[var(--color-signal)]/10 text-[var(--color-signal)]"
+                    : "border-[var(--color-line-bright)] bg-[var(--color-panel-2)] text-[var(--color-ink-faint)]"
+                }`}
+              >
+                <span
+                  className={`h-1.5 w-1.5 rounded-full ${
+                    id ? "bg-current" : "animate-pulse-dot bg-current"
+                  }`}
+                />
+                {label}
+                {id === selfId && " (you)"}
+                {!id && " — waiting"}
+              </span>
+            ))}
+          </div>
+
+          {!bothSeated && (
+            <p className="mt-2 text-[13px] text-[var(--color-ink-faint)]">
+              Share the room code below. They will appear here the moment they
+              join — no need to reload.
+            </p>
+          )}
           {mode && (
             <p className="mt-1.5 text-[13px] text-[var(--color-ink-faint)]">
               {mode === "HOST"
@@ -272,6 +343,36 @@ export function VoiceRoom({
           </div>
         </button>
       </div>
+
+      {role === "Observer" && (
+        <JoinSeat
+          code={code}
+          freeSeat={!seats.buyer ? "BUYER" : !seats.seller ? "SELLER" : null}
+        />
+      )}
+
+      {!bothSeated && role !== "Observer" && (
+        <div className="animate-rise mt-5 rounded-xl border border-[var(--color-line)] bg-[var(--color-panel)] p-4">
+          <p className="text-[11px] tracking-[0.14em] text-[var(--color-ink-faint)] uppercase">
+            Invite the other party
+          </p>
+          <div className="mt-2.5 flex flex-wrap items-center gap-2">
+            <code className="min-w-0 flex-1 truncate rounded-lg border border-[var(--color-line)] bg-[var(--color-void)] px-3 py-2 font-mono text-[12px] text-[var(--color-ink)]">
+              {inviteUrl}
+            </code>
+            <button
+              onClick={copyInvite}
+              className="shrink-0 rounded-lg border border-[var(--color-aegis)]/40 bg-[var(--color-aegis)]/10 px-3.5 py-2 text-[13px] font-semibold text-[var(--color-aegis)] transition-colors hover:bg-[var(--color-aegis)]/20"
+            >
+              {linkCopied ? "Copied" : "Copy link"}
+            </button>
+          </div>
+          <p className="mt-2 text-[12px] leading-relaxed text-[var(--color-ink-dim)]">
+            Send them this link. It seats them in this room directly — they do
+            not need to create one of their own.
+          </p>
+        </div>
+      )}
 
       {/* ---------------- security halt banner ---------------- */}
       {halted && (

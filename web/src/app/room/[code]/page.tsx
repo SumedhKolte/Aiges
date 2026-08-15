@@ -50,11 +50,9 @@ export default async function RoomPage({
         code={room.code}
         title={room.title}
         role={role}
-        bothSeated={Boolean(room.buyer_id && room.seller_id)}
         selfId={user.id}
-        counterpartyId={
-          room.buyer_id === user.id ? room.seller_id : room.buyer_id
-        }
+        initialBuyerId={room.buyer_id}
+        initialSellerId={room.seller_id}
       />
     </>
   );
