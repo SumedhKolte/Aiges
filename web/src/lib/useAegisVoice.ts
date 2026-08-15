@@ -316,12 +316,21 @@ export function useAegisVoice(roomId: string, selfId: string) {
     const bytes = new Uint8Array(analyser.frequencyBinCount);
     const floats = new Float32Array(analyser.fftSize);
     let frame = 0;
+    let lastLevel = -1;
 
     const tick = () => {
       analyser.getByteTimeDomainData(bytes);
       let peak = 0;
       for (const v of bytes) peak = Math.max(peak, Math.abs(v - 128));
-      setLevel(Math.min(1, peak / 60));
+
+      // Only re-render when the level visibly moves. Setting state on every
+      // animation frame re-rendered the whole room sixty times a second, which
+      // is wasted work at best and amplifies any render-keyed effect at worst.
+      const next = Math.min(1, peak / 60);
+      if (Math.abs(next - lastLevel) > 0.04 || (next === 0) !== (lastLevel === 0)) {
+        lastLevel = next;
+        setLevel(next);
+      }
 
       // Pitch is far more expensive than the level meter, so sample it every
       // sixth frame (~10 Hz) — plenty to characterise a speaker.
@@ -532,7 +541,18 @@ export function useAegisVoice(roomId: string, selfId: string) {
     setState("closed");
   }, [peer, seatCall]);
 
-  useEffect(() => () => disconnect(), [disconnect]);
+  // Tear down on unmount ONLY.
+  //
+  // This must not depend on `disconnect`. `disconnect` is rebuilt whenever its
+  // dependencies change, and React runs an effect's cleanup every time the
+  // effect re-runs — so depending on it here made the cleanup fire on every
+  // render, killing the session mid-connect. The mic meter re-renders roughly
+  // sixty times a second, so the call tore itself down about that often. The
+  // ref keeps the latest implementation reachable while the effect stays
+  // mounted for the component's whole life.
+  const disconnectRef = useRef(disconnect);
+  disconnectRef.current = disconnect;
+  useEffect(() => () => disconnectRef.current(), []);
 
   return {
     state,

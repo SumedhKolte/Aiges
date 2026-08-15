@@ -19,7 +19,7 @@
  * Media itself is peer-to-peer.
  */
 
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import { createClient } from "./supabase/client";
 import type { RealtimeChannel } from "@supabase/supabase-js";
 
@@ -227,12 +227,19 @@ export function usePeerAudio(roomId: string, selfId: string) {
     [roomId, selfId, signal],
   );
 
-  return {
-    peerState,
-    peerPresent,
-    startHost,
-    startGuest,
-    teardown,
-    remoteStream: remoteStreamRef,
-  };
+  // Memoised so consumers get a stable reference. Returning a fresh object
+  // literal each render makes every useCallback that depends on it unstable,
+  // which in turn makes any effect keyed on those callbacks re-run — a subtle
+  // way to make cleanup logic fire continuously.
+  return useMemo(
+    () => ({
+      peerState,
+      peerPresent,
+      startHost,
+      startGuest,
+      teardown,
+      remoteStream: remoteStreamRef,
+    }),
+    [peerState, peerPresent, startHost, startGuest, teardown],
+  );
 }
