@@ -1,0 +1,197 @@
+@import "tailwindcss";
+
+/* ==========================================================================
+   AEGIS DESIGN TOKENS
+   A single dark, institutional palette. Every colour in the app resolves to
+   one of these — no ad-hoc values in components.
+   ========================================================================== */
+
+@theme {
+  --color-void: #06070a;
+  --color-panel: #0c0f16;
+  --color-panel-2: #121724;
+  --color-line: #1e2434;
+  --color-line-bright: #2c3448;
+
+  --color-ink: #e9edf5;
+  --color-ink-dim: #98a2b8;
+  --color-ink-faint: #5c6579;
+
+  /* the one brand accent — verified, secure, live */
+  --color-aegis: #14c9b8;
+  --color-aegis-deep: #0a7d73;
+
+  /* state colours */
+  --color-signal: #3ddc97; /* funds released, approved */
+  --color-caution: #f5a524; /* elevated risk */
+  --color-halt: #f5525c; /* security halt, critical */
+
+  --font-sans: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-mono-plex), ui-monospace, monospace;
+
+  --radius-panel: 14px;
+}
+
+/* ==========================================================================
+   BASE
+   ========================================================================== */
+
+html {
+  color-scheme: dark;
+}
+
+body {
+  background: var(--color-void);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  overflow-x: hidden;
+}
+
+/* Ambient depth: two fixed radial washes so panels read as lit from above
+   rather than floating on flat black. */
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+  background:
+    radial-gradient(
+      70rem 40rem at 15% -10%,
+      color-mix(in oklab, var(--color-aegis) 9%, transparent),
+      transparent 60%
+    ),
+    radial-gradient(
+      50rem 35rem at 95% 0%,
+      color-mix(in oklab, #6366f1 7%, transparent),
+      transparent 55%
+    );
+}
+
+::selection {
+  background: color-mix(in oklab, var(--color-aegis) 32%, transparent);
+  color: var(--color-ink);
+}
+
+/* Every figure in Aegis is tabular. Money must not shift width as it
+   animates, or the whole product looks unserious. */
+.tnum {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum" 1;
+  letter-spacing: -0.01em;
+}
+
+/* ==========================================================================
+   COMPONENTS
+   ========================================================================== */
+
+@utility panel {
+  background: linear-gradient(
+    180deg,
+    color-mix(in oklab, var(--color-panel-2) 92%, transparent),
+    var(--color-panel)
+  );
+  border: 1px solid var(--color-line);
+  border-radius: var(--radius-panel);
+}
+
+@utility hairline {
+  border-color: var(--color-line);
+}
+
+/* Focus ring used by every interactive element. */
+@utility ring-aegis {
+  outline: 2px solid color-mix(in oklab, var(--color-aegis) 70%, transparent);
+  outline-offset: 2px;
+}
+
+button:focus-visible,
+a:focus-visible,
+input:focus-visible,
+textarea:focus-visible,
+select:focus-visible {
+  outline: 2px solid color-mix(in oklab, var(--color-aegis) 70%, transparent);
+  outline-offset: 2px;
+}
+
+/* ==========================================================================
+   MOTION
+   ========================================================================== */
+
+@keyframes aegis-pulse {
+  0%,
+  100% {
+    opacity: 0.35;
+    transform: scale(0.94);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.06);
+  }
+}
+
+@keyframes aegis-rise {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes aegis-sweep {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(200%);
+  }
+}
+
+@keyframes aegis-alarm {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 color-mix(in oklab, var(--color-halt) 45%, transparent);
+  }
+  50% {
+    box-shadow: 0 0 0 10px transparent;
+  }
+}
+
+.animate-rise {
+  animation: aegis-rise 0.45s cubic-bezier(0.2, 0.7, 0.3, 1) both;
+}
+.animate-pulse-dot {
+  animation: aegis-pulse 1.6s ease-in-out infinite;
+}
+.animate-alarm {
+  animation: aegis-alarm 1.4s ease-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* Scrollbars, so transcript panes don't break the dark surface. */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-line-bright) transparent;
+}
+*::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+*::-webkit-scrollbar-thumb {
+  background: var(--color-line-bright);
+  border-radius: 999px;
+}

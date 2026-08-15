@@ -1,0 +1,66 @@
+# Render blueprint for the Aegis backend.
+#
+# Deploy: Render Dashboard -> New -> Blueprint -> point at this repo.
+# Secrets are marked sync:false so Render prompts for them instead of them
+# ever living in git.
+
+services:
+  - type: web
+    name: aegis-api
+    runtime: python
+    plan: free
+    region: singapore # closest Render region to the ap-south-1 database
+    rootDir: backend
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /health
+    envVars:
+      # --- filled in by Render ---
+      - key: PYTHON_VERSION
+        value: "3.11.9"
+
+      # --- safe to commit ---
+      - key: SUPABASE_URL
+        value: https://amypafeuuqahdzsnbnte.supabase.co
+      - key: SUPABASE_ANON_KEY
+        value: sb_publishable_Ga37s2lL2ieghkXpCCL3zA_DYcI8m7T
+
+      # --- model selection ---
+      - key: OPENAI_REALTIME_MODEL
+        value: gpt-realtime-2.1
+      - key: OPENAI_REALTIME_VOICE
+        value: ash
+      - key: OPENAI_VISION_MODEL
+        value: gpt-4o
+      - key: OPENAI_JURY_MODEL
+        value: gpt-4o
+      - key: OPENAI_REEL_MODEL
+        value: gpt-4o-mini
+      - key: OPENAI_TTS_MODEL
+        value: gpt-4o-mini-tts
+      - key: OPENAI_TTS_VOICE
+        value: ash
+
+      # --- risk engine ---
+      - key: AEGIS_RISK_HALT_THRESHOLD
+        value: "70"
+      - key: AEGIS_ENTROPY_MAX_LATENCY_MS
+        value: "4000"
+      - key: AEGIS_ENTROPY_MIN_MATCH
+        value: "0.72"
+      - key: AEGIS_MAX_AUTO_LOCK_CENTS
+        value: "5000000"
+
+      # --- SECRETS: Render will prompt. Never commit these. ---
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
+      - key: SUPABASE_JWT_SECRET
+        sync: false
+
+      # Set to your Vercel URL after the frontend deploys, e.g.
+      #   https://aiges.vercel.app
+      # Without this the browser cannot call the API at all.
+      - key: CORS_ORIGINS
+        sync: false
