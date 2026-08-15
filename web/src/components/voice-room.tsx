@@ -349,25 +349,30 @@ export function VoiceRoom({
                   ["Buyer", seats.buyer],
                   ["Seller", seats.seller],
                 ] as const
-              ).map(([label, id]) => (
-                <span
-                  key={label}
-                  className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-semibold transition-colors duration-300 ${
-                    id
-                      ? "border-[var(--color-signal)]/40 bg-[var(--color-signal)]/10 text-[var(--color-signal)]"
-                      : "border-[var(--color-line-bright)] bg-[var(--color-panel-2)] text-[var(--color-ink-faint)]"
-                  }`}
-                >
+              ).map(([label, id]) => {
+                const isSelf = Boolean(id) && id === selfId;
+                return (
                   <span
-                    className={`h-1.5 w-1.5 rounded-full ${
-                      id ? "bg-current" : "animate-pulse-dot bg-current"
+                    key={label}
+                    className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-semibold transition-colors duration-300 ${
+                      isSelf
+                        ? "border-[var(--color-signal)]/40 bg-[var(--color-signal)]/10 text-[var(--color-signal)]"
+                        : id
+                          ? "border-[var(--color-line-bright)] bg-[var(--color-panel-2)] text-[var(--color-ink-dim)]"
+                          : "border-[var(--color-line-bright)] bg-[var(--color-panel-2)] text-[var(--color-ink-faint)]"
                     }`}
-                  />
-                  {label}
-                  {id === selfId && " (you)"}
-                  {!id && " — waiting"}
-                </span>
-              ))}
+                  >
+                    <span
+                      className={`h-1.5 w-1.5 rounded-full ${
+                        id ? "bg-current" : "animate-pulse-dot bg-current"
+                      }`}
+                    />
+                    {label}
+                    {isSelf && " (you)"}
+                    {!id && " — waiting"}
+                  </span>
+                );
+              })}
             </div>
           </div>
 
