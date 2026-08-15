@@ -39,7 +39,7 @@ export default async function LandingPage() {
   return (
     <div className="mx-auto max-w-5xl px-5">
       <header className="animate-rise flex items-center justify-between py-6">
-        <AegisLogo size={26} />
+        <AegisLogo size={24} />
         <Link
           href={user ? "/dashboard" : "/login"}
           className="rounded-lg border border-[var(--color-line-bright)] bg-[var(--color-panel)]/70 px-3.5 py-2 text-[14px] font-medium text-[var(--color-ink)] transition-[transform,background-color] duration-200 hover:-translate-y-px hover:bg-[var(--color-panel-2)]"

@@ -49,7 +49,8 @@ export function TopNav({
             </Link>
           )}
           <Link
-            href="/dashboard"
+            href="/"
+            aria-label="Aegis home"
             className="transition-opacity hover:opacity-80"
           >
             <AegisLogo size={24} />

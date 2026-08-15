@@ -14,28 +14,32 @@ export function AegisMark({ size = 28 }: { size?: number }) {
       viewBox="0 0 32 32"
       fill="none"
       aria-hidden="true"
+      focusable="false"
       className="shrink-0"
     >
       <defs>
-        <linearGradient id="aegis-mark-g" x1="16" y1="2" x2="16" y2="30">
+        <linearGradient id="aegis-mark-g" x1="8" y1="4" x2="24" y2="29">
           <stop offset="0%" stopColor="var(--color-aegis)" />
           <stop offset="100%" stopColor="var(--color-aegis-deep)" />
         </linearGradient>
+        <linearGradient id="aegis-mark-fill" x1="16" y1="3" x2="16" y2="29">
+          <stop offset="0%" stopColor="#153a40" />
+          <stop offset="100%" stopColor="#091319" />
+        </linearGradient>
       </defs>
-      {/* shield */}
+      {/* A deliberate, weighted shield that stays legible from nav size to hero size. */}
       <path
-        d="M16 2.5 27 6.6v8.2c0 6.6-4.4 12.3-11 14.7-6.6-2.4-11-8.1-11-14.7V6.6L16 2.5Z"
-        fill="url(#aegis-mark-g)"
-        fillOpacity="0.16"
+        d="M16 2.8 26.3 6.7v8c0 6.4-4.2 11.9-10.3 14.3C9.9 26.6 5.7 21.1 5.7 14.7v-8L16 2.8Z"
+        fill="url(#aegis-mark-fill)"
         stroke="url(#aegis-mark-g)"
-        strokeWidth="1.6"
+        strokeWidth="1.8"
         strokeLinejoin="round"
       />
-      {/* the seal: an inward chevron, i.e. a lock that has closed */}
+      {/* The closed chevron is both the lock seal and the product's trust signal. */}
       <path
-        d="M11 15.4 16 20l5-6.4"
-        stroke="var(--color-aegis)"
-        strokeWidth="2.1"
+        d="m10.8 15.1 5.2 5 5.2-6.7"
+        stroke="#8df4e8"
+        strokeWidth="2.35"
         strokeLinecap="round"
         strokeLinejoin="round"
       />
@@ -55,7 +59,7 @@ export function AegisLogo({
       <AegisMark size={size} />
       <span className="leading-none">
         <span
-          className="block font-semibold tracking-tight text-[var(--color-ink)]"
+          className="block font-semibold tracking-[-0.035em] text-[var(--color-ink)]"
           style={{ fontSize: size * 0.62 }}
         >
           Aegis

@@ -19,6 +19,10 @@ export const metadata: Metadata = {
   title: "Aegis",
   description:
     "An autonomous AI voice arbitrator that holds funds in escrow, detects deception in real time, and verifies delivered work.",
+  icons: {
+    icon: "/favicon.svg",
+    shortcut: "/favicon.svg",
+  },
 };
 
 export default function RootLayout({
