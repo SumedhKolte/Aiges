@@ -49,12 +49,38 @@ app.include_router(audit.router)
 app.include_router(guardian.router)
 
 
+def _origin_allowed(origin: str) -> bool:
+    return origin in settings.cors_origin_list or bool(
+        settings.cors_origin_regex and re.fullmatch(settings.cors_origin_regex, origin)
+    )
+
+
 @app.exception_handler(Exception)
 async def unhandled(request: Request, exc: Exception) -> JSONResponse:
+    """Return a 500 the browser can actually read.
+
+    This handler runs above CORSMiddleware, so without setting the headers here
+    the error response carries none — and the browser discards it as a CORS
+    failure, surfacing "NetworkError when attempting to fetch resource" instead
+    of the real message. Every server fault then looks like a connectivity
+    problem, which sends you looking in exactly the wrong place.
+    """
     log.exception("Unhandled error on %s %s", request.method, request.url.path)
+
+    headers: dict[str, str] = {}
+    origin = request.headers.get("origin")
+    if origin and _origin_allowed(origin):
+        headers["Access-Control-Allow-Origin"] = origin
+        headers["Access-Control-Allow-Credentials"] = "true"
+        headers["Vary"] = "Origin"
+
     return JSONResponse(
         status_code=500,
-        content={"detail": "Internal error", "path": request.url.path},
+        content={
+            "detail": f"{type(exc).__name__}: {exc}"[:400],
+            "path": request.url.path,
+        },
+        headers=headers,
     )
 
 

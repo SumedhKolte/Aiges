@@ -68,18 +68,32 @@ async def generate_reel(
         .execute() or NO_ROW
     ).data or {}
 
+    # A Guardian contract never had a voice room, so room_id is NULL. Passing
+    # that straight to PostgREST sends the literal string "None" and Postgres
+    # rejects it as an invalid uuid, 500ing the whole request.
+    room_id = contract.get("room_id")
+
     risk_events = (
-        db.table("risk_events").select("id").eq("room_id", contract["room_id"]).execute()
-    ).data or []
+        (
+            db.table("risk_events").select("id").eq("room_id", room_id).execute()
+        ).data
+        or []
+        if room_id
+        else []
+    )
 
     challenge = (
-        db.table("voice_challenges")
-        .select("latency_ms, phonetic_match")
-        .eq("room_id", contract["room_id"])
-        .eq("passed", True)
-        .limit(1)
-        .execute()
-    ).data
+        (
+            db.table("voice_challenges")
+            .select("latency_ms, phonetic_match")
+            .eq("room_id", room_id)
+            .eq("passed", True)
+            .limit(1)
+            .execute()
+        ).data
+        if room_id
+        else None
+    )
 
     verification = (
         db.table("verifications")
@@ -90,12 +104,29 @@ async def generate_reel(
         .execute()
     ).data
 
+    # What this user actually received, straight off the immutable ledger.
+    wallet = (
+        db.table("wallets").select("id").eq("user_id", user.id).maybe_single().execute()
+        or NO_ROW
+    ).data
+    payout_cents = 0
+    if wallet:
+        entries = (
+            db.table("ledger_entries")
+            .select("amount_cents")
+            .eq("contract_id", args.contract_id)
+            .eq("wallet_id", wallet["id"])
+            .execute()
+        ).data or []
+        payout_cents = sum(e["amount_cents"] for e in entries if e["amount_cents"] > 0)
+
     brief = "\n".join(
         [
             "COMPLETED DEAL",
             f"  Freelancer ......... {profile.get('name', 'A verified professional')}",
             f"  Delivered .......... {contract['item_description']}",
             f"  Contract value ..... ${contract['price_cents'] / 100:,.2f}",
+            f"  ACTUALLY RECEIVED .. ${payout_cents / 100:,.2f}",
             f"  Release condition .. {contract['release_condition']}",
             f"  Trust score ........ {profile.get('trust_score', 100)}",
             f"  Deals closed ....... {profile.get('deals_closed', 1)}",
@@ -106,6 +137,11 @@ async def generate_reel(
             "",
             "Write the headline and exactly four scene captions: the deal, the "
             "security check, the verified delivery, and the payout.",
+            "",
+            "The payout caption must match ACTUALLY RECEIVED, which may be less "
+            "than the contract value if a jury settled the deal, and may be "
+            "zero. Never imply a payment that did not happen; if nothing was "
+            "received, say so plainly and without spin.",
         ]
     )
 
@@ -119,7 +155,12 @@ async def generate_reel(
     )
 
     scenes = _merge_scene_data(
-        copy.get("scenes", []), contract, challenge, verification, profile
+        copy.get("scenes", []),
+        contract,
+        challenge,
+        verification,
+        profile,
+        payout_cents,
     )
 
     reel = (
@@ -145,11 +186,15 @@ def _merge_scene_data(
     challenge: list | None,
     verification: list | None,
     profile: dict,
+    payout_cents: int,
 ) -> list[dict]:
     """Bind each AI caption to a hard number from the database.
 
-    The model writes the words; the figures come from the ledger, so a reel can
-    never advertise an amount the contract did not actually settle.
+    The model writes the words; the payout figure is read from the ledger, not
+    from the contract's face value. A disputed deal can settle for a fraction
+    of the price — or nothing at all — and a reel that advertises the headline
+    amount in that case is telling the viewer something untrue about a receipt
+    whose whole purpose is being verifiable.
     """
     facts = [
         {
@@ -177,8 +222,12 @@ def _merge_scene_data(
         },
         {
             "key": "payout",
-            "value": f"${contract['price_cents'] / 100:,.2f}",
-            "detail": f"Trust score {profile.get('trust_score', 100)}",
+            "value": f"${payout_cents / 100:,.2f}",
+            "detail": (
+                f"Settled in full · trust score {profile.get('trust_score', 100)}"
+                if payout_cents >= contract["price_cents"]
+                else f"Settled by jury · trust score {profile.get('trust_score', 100)}"
+            ),
         },
     ]
     out = []
@@ -196,11 +245,17 @@ def _merge_scene_data(
 
 
 def _shape(reel: dict, contract: dict) -> dict[str, Any]:
+    payout = next(
+        (s.get("value") for s in (reel.get("scenes") or []) if s.get("key") == "payout"),
+        None,
+    )
     return {
         "share_slug": reel["share_slug"],
         "headline": reel["headline"],
         "scenes": reel["scenes"],
+        # contract value, and what actually settled — which can differ
         "amount_usd": f"{contract['price_cents'] / 100:,.2f}",
+        "payout_usd": payout,
         "item": contract["item_description"],
     }
 
