@@ -19,6 +19,9 @@ class Settings(BaseSettings):
     # --- OpenAI -------------------------------------------------------------
     openai_api_key: str
     openai_realtime_model: str = "gpt-realtime"
+    # Realtime hears the mixed room audio, while this separate ASR pass gives
+    # the client speaker segments it can attribute to the Buyer or Seller.
+    openai_transcription_model: str = "gpt-4o-transcribe-diarize"
     openai_realtime_voice: str = "ash"
     openai_vision_model: str = "gpt-4o"
     openai_jury_model: str = "gpt-4o"

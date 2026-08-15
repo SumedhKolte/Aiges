@@ -28,6 +28,8 @@ services:
       # --- model selection ---
       - key: OPENAI_REALTIME_MODEL
         value: gpt-realtime-2.1
+      - key: OPENAI_TRANSCRIPTION_MODEL
+        value: gpt-4o-transcribe-diarize
       - key: OPENAI_REALTIME_VOICE
         value: ash
       - key: OPENAI_VISION_MODEL

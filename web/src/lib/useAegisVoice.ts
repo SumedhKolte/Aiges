@@ -73,6 +73,10 @@ export function useAegisVoice(
   /** Aegis's own voice track, relayed onward to the guest by the host. */
   const aegisStreamRef = useRef<MediaStream | null>(null);
   const pitchesRef = useRef<number[]>([]);
+  // Transcription completes asynchronously. Preserve who held the floor when
+  // an audio item began instead of guessing after the floor may have changed.
+  const audioItemRoles = useRef(new Map<string, string>());
+  const activeRoleRef = useRef<string | null>(null);
 
   const peer = usePeerAudio(roomId, selfId);
 
@@ -236,6 +240,15 @@ export function useAegisVoice(
       switch (evt.type) {
         // ---- the party spoke ----
         case "input_audio_buffer.speech_started": {
+          const itemId = String(evt.item_id ?? "");
+          const source = peer.activeSourceRef.current;
+          const role =
+            source === "LOCAL"
+              ? selfLabel
+              : source === "REMOTE"
+                ? peerLabel
+                : activeRoleRef.current;
+          if (itemId && role) audioItemRoles.current.set(itemId, role);
           if (awaitingChallenge.current && aegisFinishedAt.current) {
             measuredLatency.current = Math.round(
               performance.now() - aegisFinishedAt.current,
@@ -246,13 +259,31 @@ export function useAegisVoice(
         case "conversation.item.input_audio_transcription.completed": {
           const text = String(evt.transcript ?? "");
           if (text.trim()) {
-            // Attribute using whoever held the floor, so the shared transcript
-            // reads "Buyer:" / "Seller:" instead of an anonymous "Party".
-            const src = peer.activeSourceRef.current;
-            const who =
-              src === "LOCAL" ? selfLabel : src === "REMOTE" ? peerLabel : "PARTY";
+            const itemId = String(evt.item_id ?? "");
+            // Falling back to PARTY is safer than assigning a line to the
+            // wrong person after a handoff.
+            const who = itemId ? audioItemRoles.current.get(itemId) ?? "PARTY" : "PARTY";
+            if (itemId) audioItemRoles.current.delete(itemId);
             push({ speaker: "PARTY", text, label: who });
             void persist(who.toUpperCase(), text);
+
+            // Realtime consumes the mixed audio natively. Give it an explicit
+            // source-of-truth turn before asking for a response, so it never
+            // has to infer Buyer vs Seller from a voice.
+            send({
+              type: "conversation.item.create",
+              item: {
+                type: "message",
+                role: "user",
+                content: [
+                  {
+                    type: "input_text",
+                    text: `[Authoritative transcript — ${who}]: ${text}`,
+                  },
+                ],
+              },
+            });
+            createResponse();
           }
           break;
         }
@@ -318,7 +349,7 @@ export function useAegisVoice(
         }
       }
     },
-    [handleToolCall, peer, persist, push, peerLabel, selfLabel],
+    [createResponse, handleToolCall, peer, persist, push, peerLabel, selfLabel, send],
   );
 
   // --- microphone level + two-speaker analysis -----------------------------
@@ -560,6 +591,8 @@ export function useAegisVoice(
       src === "BOTH"
         ? "BOTH parties are talking at once"
         : `${src === "LOCAL" ? selfLabel : peerLabel} is now speaking`;
+    activeRoleRef.current =
+      src === "LOCAL" ? selfLabel : src === "REMOTE" ? peerLabel : null;
     if (who === lastAnnounced.current) return;
     lastAnnounced.current = who;
 

@@ -80,7 +80,12 @@ async def session_config(
         "tool_choice": "auto",
         "audio": {
             "input": {
-                "transcription": {"model": "whisper-1"},
+                # The arbitrator receives one mixed room track. Whisper can
+                # transcribe it, but cannot tell which person said a segment.
+                "transcription": {
+                    "model": settings.openai_transcription_model,
+                    "language": "en",
+                },
                 # Server-side VAD: the parties talk to each other and Aegis
                 # decides for itself when a turn ended. `interrupt_response`
                 # lets a human cut Aegis off mid-sentence, which is what makes
@@ -91,7 +96,9 @@ async def session_config(
                     "threshold": 0.62,
                     "prefix_padding_ms": 300,
                     "silence_duration_ms": 820,
-                    "create_response": True,
+                    # Audio alone has no trustworthy Buyer/Seller identity.
+                    # Respond only after the client sends an attributed turn.
+                    "create_response": False,
                     "interrupt_response": True,
                 },
             },

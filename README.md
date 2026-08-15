@@ -22,8 +22,10 @@ configurable in `.env`.
 | The three jury agents               | `OPENAI_JURY_MODEL`      | `gpt-4o`        | Needs to hold a contract, a complaint, and two arguments in one judgement. |
 | Trust Reel copywriting              | `OPENAI_REEL_MODEL`      | `gpt-4o-mini`   | Short structured copy — small and fast is right here. |
 
-Transcription of the parties' speech uses `whisper-1`, which is requested
-inside the Realtime session and needs no separate key.
+Transcription of the parties' speech uses `gpt-4o-transcribe-diarize` inside
+the Realtime session. The client binds each completed segment to the explicit
+Buyer/Seller floor state before it asks the arbitrator to respond, so a mixed
+audio stream is never treated as proof of a speaker's role.
 
 **Get your key:** <https://platform.openai.com/api-keys> — it must have
 Realtime API access enabled.
