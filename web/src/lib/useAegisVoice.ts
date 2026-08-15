@@ -400,9 +400,12 @@ export function useAegisVoice(roomId: string, selfId: string) {
       heldSeat.current = true;
       setMode("HOST");
 
-      const configRes = await fetch(`${API}/realtime/config`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
+      const configRes = await fetch(
+        `${API}/realtime/config?room_id=${encodeURIComponent(roomId)}`,
+        {
+          headers: { Authorization: `Bearer ${token}` },
+        },
+      );
       if (!configRes.ok) throw new Error("Could not load the arbitrator configuration.");
       const config = await configRes.json();
 
@@ -447,9 +450,12 @@ export function useAegisVoice(roomId: string, selfId: string) {
         heartbeatRef.current = setInterval(() => void seatCall("heartbeat"), 30_000);
         createResponse({
           instructions:
-            "Greet both parties in one sentence. Say you are Aegis, you " +
-            "will hold the funds, and ask them to state what is being " +
-            "bought and for how much.",
+            "Open the negotiation. In one sentence: you are Aegis, you will " +
+            "hold the funds in escrow, and neither side has to trust the " +
+            "other. Then address the Buyer by name and ask them to state " +
+            "what they want to buy and what they are offering to pay. End " +
+            "your turn with that question. Do not address both parties at " +
+            "once and do not ask an open question to the room.",
         });
       };
 
