@@ -128,6 +128,8 @@ export function VoiceRoom({
   const [chatError, setChatError] = useState<string | null>(null);
   const [terms, setTerms] = useState<DraftTerms | null>(null);
   const [challenges, setChallenges] = useState<Challenge[]>([]);
+  const [acceptingTerms, setAcceptingTerms] = useState(false);
+  const [termAcceptanceMessage, setTermAcceptanceMessage] = useState<string | null>(null);
   // Seats must be live. The server renders this page once, so whoever opened
   // the room would otherwise sit on "waiting for the other party" forever —
   // the counterparty's arrival only ever lands in Postgres, never in props.
@@ -321,6 +323,64 @@ export function VoiceRoom({
       terms?.draft_condition,
   );
   const canStartVoice = selfRole === "SELLER" || proposalReady;
+  const canAcceptCurrentTerms =
+    Boolean(selfRole) &&
+    proposalReady &&
+    (selfRole === "SELLER" || live);
+
+  const acceptCurrentTerms = useCallback(async () => {
+    if (!selfRole || !terms?.draft_item || terms.draft_price_cents == null || !terms.draft_condition) {
+      return;
+    }
+    setAcceptingTerms(true);
+    setTermAcceptanceMessage(null);
+    try {
+      const supabase = createClient();
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+      const headers = {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${session?.access_token ?? ""}`,
+      };
+      const acceptedRes = await fetch(`${API}/tools/accept_terms`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({ room_id: roomId }),
+      });
+      const accepted = await acceptedRes.json().catch(() => ({}));
+      if (!acceptedRes.ok) throw new Error(accepted?.detail ?? "Could not record acceptance.");
+
+      if (!accepted.ready_to_lock) {
+        setTermAcceptanceMessage(
+          "Your acceptance is recorded. Waiting for the other party to accept these exact terms.",
+        );
+        return;
+      }
+
+      const lockRes = await fetch(`${API}/tools/create_escrow_contract`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({
+          room_id: roomId,
+          item_description: terms.draft_item,
+          price_usd: terms.draft_price_cents / 100,
+          release_condition: terms.draft_condition,
+        }),
+      });
+      const locked = await lockRes.json().catch(() => ({}));
+      if (!lockRes.ok || !locked.ok) {
+        throw new Error(locked?.spoken_summary ?? locked?.detail ?? "Escrow could not be locked.");
+      }
+      setTermAcceptanceMessage("Both authenticated acceptances recorded. Funds are locked in escrow.");
+    } catch (e) {
+      setTermAcceptanceMessage(
+        e instanceof Error ? e.message : "Could not record acceptance.",
+      );
+    } finally {
+      setAcceptingTerms(false);
+    }
+  }, [roomId, selfRole, terms]);
 
   /**
    * Send a typed line into the negotiation.
@@ -875,6 +935,29 @@ export function VoiceRoom({
           <CounterpartyRisk profileId={counterpartyId} />
 
           <LiveTerms terms={terms} locked={Boolean(contract)} />
+
+          {canAcceptCurrentTerms && !contract && (
+            <Panel className="p-5">
+              <SectionLabel>Authenticated acceptance</SectionLabel>
+              <p className="mt-2 text-[13px] leading-relaxed text-[var(--color-ink-dim)]">
+                Accepting records your account&apos;s approval of this exact item,
+                price, and release condition. Any term change requires both
+                parties to accept again.
+              </p>
+              <PrimaryButton
+                onClick={acceptCurrentTerms}
+                disabled={acceptingTerms}
+                className="mt-4 w-full"
+              >
+                {acceptingTerms ? "Recording acceptance…" : "Accept current terms"}
+              </PrimaryButton>
+              {termAcceptanceMessage && (
+                <p className="mt-3 text-[12px] leading-relaxed text-[var(--color-ink-dim)]">
+                  {termAcceptanceMessage}
+                </p>
+              )}
+            </Panel>
+          )}
 
           <ClauseHardener terms={terms} />
 

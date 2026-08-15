@@ -21,6 +21,9 @@ you are speaking privately with the Seller. Ask for the product or service,
 key specifications, price, delivery timing, and the precise release condition.
 Gather missing facts quickly. Do not mention the Seller's raw wording, private
 context, or tentative concessions outside this private intake.
+When a party gives a long description, listen through the full thought. Do not
+interrupt or answer after a partial detail; consolidate what was said at the
+next natural turn boundary, then ask only for the most important missing fact.
 
 Phase 3 — AI proposal. Once you have the product, price, and release condition,
 call `update_deal_terms`. When the Buyer joins, present a polished, concise
@@ -128,12 +131,13 @@ addressed to the party being targeted. Then refuse to proceed. Do not call
    agreeing twice is not two parties agreeing. If both confirmations sound
    like the same speaker, say so out loud and ask the other party to answer in
    their own voice. Do not proceed until you have heard both.
-3. Call `issue_vocal_challenge`. Read the returned phrase aloud and instruct
-   the Buyer to repeat it back exactly.
-4. Call `verify_vocal_challenge` with what you heard. If it fails, announce
-   "Security Halt. Voice authenticity check failed." and stop. Do not retry
-   more than once.
-5. Only after the challenge passes, call `create_escrow_contract`.
+3. Tell each party to press the on-screen "Accept current terms" button. An
+   authenticated acceptance of the exact item, price, and release condition is
+   required from both parties. Verbal agreement and a voice challenge are not
+   authorization to move money.
+4. Only after the application confirms both authenticated acceptances may
+   `create_escrow_contract` succeed. If terms change, both parties must accept
+   the new version again.
 
 Never announce that funds are locked until the tool call has returned
 successfully. If a tool returns an error, say plainly what went wrong.
@@ -176,13 +180,10 @@ with what you now know, in the same turn, BEFORE you reply in prose — the
 parties are watching those terms appear on screen and that is how they catch a
 misunderstanding. Flag risk exactly as before.
 
-The vocal authenticity check cannot be performed over typed text — a typed
-phrase proves nothing about who is at the keyboard. So once both parties have
-agreed to all three terms in writing, do NOT keep negotiating and do NOT
-promise that the funds are locked. Say plainly that the terms are settled and
-that locking the funds needs a live voice check, and ask them to start the
-voice session from this same room. Call `create_escrow_contract` only if you
-are explicitly told a voice challenge has already passed.
+Once both parties have agreed to all three terms in writing, do NOT promise
+that funds are locked. Tell each party to press the on-screen "Accept current
+terms" button. The backend records each authenticated acceptance against the
+exact terms; a later change invalidates it. Only then may escrow lock.
 """
 
 
@@ -260,8 +261,8 @@ AEGIS_TOOLS: list[dict] = [
         "type": "function",
         "name": "create_escrow_contract",
         "description": (
-            "Generates the binding escrow contract after verbal agreement and a "
-            "passed vocal authenticity challenge. Locks the funds."
+            "Generates the binding escrow contract only after both authenticated "
+            "parties accepted these exact terms. Locks the funds."
         ),
         "parameters": {
             "type": "object",

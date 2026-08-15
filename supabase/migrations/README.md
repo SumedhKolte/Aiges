@@ -12,6 +12,7 @@ The full Aegis schema is already applied to the Supabase project `Aegis`
 | 20260815072203   | `aegis_rls_and_realtime`            |
 | 20260815072219   | `aegis_storage_work_proofs`         |
 | 20260815072312   | `aegis_harden_function_surface`     |
+| 20260815080000   | `mediation_security`                 |
 
 To materialise the `.sql` files into this directory, link the project and pull.
 Both commands need your own Supabase credentials, so run them yourself:
@@ -22,3 +23,8 @@ supabase link --project-ref amypafeuuqahdzsnbnte && supabase db pull
 
 After that, `supabase db reset` reproduces the entire schema from scratch on a
 local stack.
+
+`20260815080000_mediation_security.sql` is required before deploying the
+matching backend. It adds authenticated term-consent receipts and the atomic
+escrow/release functions used by the API. Apply it through your normal reviewed
+Supabase migration workflow (for example `supabase db push` after linking).

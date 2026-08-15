@@ -39,6 +39,9 @@ export type Utterance = {
 
 /** How long a guest waits for the seat holder to answer before taking over. */
 const HOST_ANSWER_TIMEOUT_MS = 8000;
+// WebRTC may briefly enter `disconnected` while ICE recovers. That is not a
+// failed call and must not throw away a speaker's in-progress turn.
+const REALTIME_DISCONNECT_GRACE_MS = 12_000;
 // A host that crashed still holds its lease until the server calls it stale,
 // so keep asking across that window rather than giving up on the first no.
 const TAKEOVER_ATTEMPTS = 12;
@@ -103,6 +106,7 @@ export function useAegisVoice(
   const measuredLatency = useRef<number | null>(null);
   const heldSeat = useRef(false);
   const heartbeatRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const realtimeDisconnectRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // Guest-side recovery when the seat holder stops answering.
   const hostWatchdogRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const takingOver = useRef(false);
@@ -541,23 +545,53 @@ export function useAegisVoice(
       };
 
       pc.onconnectionstatechange = () => {
-        if (["failed", "disconnected"].includes(pc.connectionState)) {
+        if (pc !== pcRef.current) return;
+
+        if (pc.connectionState === "connected") {
+          if (realtimeDisconnectRef.current) {
+            clearTimeout(realtimeDisconnectRef.current);
+            realtimeDisconnectRef.current = null;
+          }
+          return;
+        }
+
+        if (pc.connectionState === "failed") {
           setState("error");
           setError("The voice connection dropped.");
+          return;
+        }
+
+        if (
+          pc.connectionState === "disconnected" &&
+          !realtimeDisconnectRef.current
+        ) {
+          realtimeDisconnectRef.current = setTimeout(() => {
+            realtimeDisconnectRef.current = null;
+            if (
+              pc === pcRef.current &&
+              ["disconnected", "failed"].includes(pc.connectionState)
+            ) {
+              setState("error");
+              setError("The voice connection dropped.");
+            }
+          }, REALTIME_DISCONNECT_GRACE_MS);
         }
       };
 
       const offer = await pc.createOffer();
       await pc.setLocalDescription(offer);
 
-      const sdpRes = await fetch(`${API}/realtime/sdp`, {
+      const sdpRes = await fetch(
+        `${API}/realtime/sdp?room_id=${encodeURIComponent(roomId)}`,
+        {
         method: "POST",
         headers: {
           "Content-Type": "application/sdp",
           Authorization: `Bearer ${token}`,
         },
         body: offer.sdp,
-      });
+        },
+      );
       if (!sdpRes.ok) {
         throw new Error(
           `The arbitrator did not accept the connection (${sdpRes.status}).`,
@@ -922,6 +956,10 @@ export function useAegisVoice(
     if (heartbeatRef.current) {
       clearInterval(heartbeatRef.current);
       heartbeatRef.current = null;
+    }
+    if (realtimeDisconnectRef.current) {
+      clearTimeout(realtimeDisconnectRef.current);
+      realtimeDisconnectRef.current = null;
     }
     if (hostWatchdogRef.current) {
       clearTimeout(hostWatchdogRef.current);

@@ -212,6 +212,23 @@ export function ContractWorkspace({
     }
   }
 
+  async function acceptDelivery() {
+    if (!verification) return;
+    setBusy("accept-delivery");
+    setError(null);
+    try {
+      await authed("/vision/accept_delivery", {
+        contract_id: contract.id,
+        verification_id: verification.id,
+      });
+      router.refresh();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Could not accept delivery.");
+    } finally {
+      setBusy(null);
+    }
+  }
+
   // ---- trust reel ----------------------------------------------------------
   async function makeReel() {
     setBusy("reel");
@@ -231,6 +248,10 @@ export function ContractWorkspace({
     isSeller && ["LOCKED", "PENDING_VERIFICATION"].includes(contract.status);
   const canDispute =
     !isSeller && ["LOCKED", "PENDING_VERIFICATION"].includes(contract.status);
+  const canAcceptDelivery =
+    !isSeller &&
+    Boolean(verification?.approved) &&
+    ["LOCKED", "PENDING_VERIFICATION"].includes(contract.status);
 
   return (
     <main className="mx-auto max-w-5xl px-5 py-8">
@@ -354,6 +375,21 @@ export function ContractWorkspace({
           <p className="mt-3 text-[14px] leading-relaxed whitespace-pre-line text-[var(--color-ink-dim)]">
             {verification.reasoning}
           </p>
+          {canAcceptDelivery && (
+            <div className="mt-4 rounded-lg border border-[var(--color-aegis)]/35 bg-[var(--color-aegis)]/10 p-3.5">
+              <p className="text-[13px] leading-relaxed text-[var(--color-ink)]">
+                The AI review is advisory. Funds remain held until you accept
+                this specific proof of completion.
+              </p>
+              <PrimaryButton
+                onClick={acceptDelivery}
+                disabled={busy !== null}
+                className="mt-3"
+              >
+                {busy === "accept-delivery" ? "Releasing…" : "Accept delivery & release funds"}
+              </PrimaryButton>
+            </div>
+          )}
         </Panel>
       )}
 

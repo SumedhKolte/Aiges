@@ -25,6 +25,11 @@ class VerifyArgs(BaseModel):
     image_path: str  # storage key, e.g. "<contract_id>/proof-1712.png"
 
 
+class AcceptDeliveryArgs(BaseModel):
+    contract_id: str
+    verification_id: str
+
+
 @router.post("/verify")
 async def verify_work(
     args: VerifyArgs, user: CurrentUser = Depends(current_user)
@@ -86,7 +91,7 @@ async def verify_work(
     confidence = max(0.0, min(1.0, float(verdict.get("confidence", 0))))
     reasoning = f"{verdict.get('observed', '')}\n\n{verdict.get('reasoning', '')}".strip()
 
-    db.table("verifications").insert(
+    verification = db.table("verifications").insert(
         {
             "contract_id": args.contract_id,
             "submitted_by": user.id,
@@ -96,17 +101,9 @@ async def verify_work(
             "reasoning": reasoning,
             "model": settings.openai_vision_model,
         }
-    ).execute()
+    ).execute().data[0]
 
-    released = None
-    if approved:
-        try:
-            released = db.rpc(
-                "release_escrow", {"p_contract_id": args.contract_id}
-            ).execute().data
-        except Exception as exc:  # noqa: BLE001
-            raise HTTPException(409, f"Payout failed: {exc}") from exc
-    else:
+    if not approved:
         # leave it awaiting another submission rather than auto-refunding;
         # the Buyer may still dispute and the Seller may still resubmit
         db.table("contracts").update({"status": "LOCKED"}).eq(
@@ -118,8 +115,45 @@ async def verify_work(
         "confidence": confidence,
         "observed": verdict.get("observed", ""),
         "reasoning": verdict.get("reasoning", ""),
-        "status": (released or {}).get("status", "LOCKED"),
-        "released_usd": (
-            f"{released['price_cents'] / 100:,.2f}" if released else None
-        ),
+        "verification_id": verification["id"],
+        "status": "PENDING_BUYER_ACCEPTANCE" if approved else "LOCKED",
+        "requires_buyer_acceptance": approved,
+    }
+
+
+@router.post("/accept_delivery")
+async def accept_delivery(
+    args: AcceptDeliveryArgs, user: CurrentUser = Depends(current_user)
+) -> dict[str, Any]:
+    """Release only after the Buyer accepts a specific approved proof."""
+    db = admin()
+    contract = (
+        db.table("contracts")
+        .select("id, buyer_id, price_cents")
+        .eq("id", args.contract_id)
+        .maybe_single()
+        .execute()
+        or NO_ROW
+    ).data
+    if not contract:
+        raise HTTPException(404, "Contract not found")
+    if user.id != contract["buyer_id"]:
+        raise HTTPException(403, "Only the Buyer may accept delivery")
+
+    try:
+        db.rpc(
+            "accept_and_release_escrow",
+            {
+                "p_contract_id": args.contract_id,
+                "p_verification_id": args.verification_id,
+                "p_buyer_id": user.id,
+            },
+        ).execute()
+    except Exception as exc:  # noqa: BLE001 - DB transaction is authoritative
+        raise HTTPException(409, f"Delivery acceptance failed: {exc}") from exc
+
+    return {
+        "ok": True,
+        "status": "FUNDS_RELEASED",
+        "released_usd": f"{contract['price_cents'] / 100:,.2f}",
     }

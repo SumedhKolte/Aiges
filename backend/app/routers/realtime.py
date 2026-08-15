@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Body, Depends, Response
+from fastapi import APIRouter, Body, Depends, HTTPException, Response
 from pydantic import BaseModel
 
 from ..config import get_settings
@@ -13,6 +13,17 @@ from ..services.openai_client import realtime_sdp_exchange
 from ..supabase_client import admin
 
 router = APIRouter(prefix="/realtime", tags=["realtime"])
+
+
+def _room_for_member(room_id: str, user_id: str) -> dict:
+    room = (
+        admin().table("rooms").select("*").eq("id", room_id).maybe_single().execute().data
+    )
+    if not room:
+        raise HTTPException(404, "Negotiation room not found")
+    if user_id not in (room.get("buyer_id"), room.get("seller_id"), room.get("host_id")):
+        raise HTTPException(403, "You are not a party to this negotiation")
+    return room
 
 
 @router.get("/config")
@@ -31,6 +42,8 @@ async def session_config(
     """
     settings = get_settings()
     db = admin()
+    if room_id:
+        _room_for_member(room_id, user.id)
     instructions = room_instructions(db, room_id, channel="voice")
     room = None
     if room_id:
@@ -141,8 +154,12 @@ async def release_seat(
 @router.post("/sdp")
 async def sdp_proxy(
     offer: str = Body(..., media_type="application/sdp"),
+    room_id: str = "",
     user: CurrentUser = Depends(current_user),
 ) -> Response:
     """Sign and forward the browser's SDP offer; return OpenAI's answer."""
+    if not room_id:
+        raise HTTPException(422, "room_id is required")
+    _room_for_member(room_id, user.id)
     answer = await realtime_sdp_exchange(offer)
     return Response(content=answer, media_type="application/sdp")
