@@ -312,6 +312,15 @@ export function VoiceRoom({
       : seats.seller === selfId
         ? "SELLER"
         : null;
+  // The Seller privately builds the offer first. A Buyer cannot open a voice
+  // bridge until the three terms exist, so there is no path for raw intake
+  // audio or transcript to reach the Buyer.
+  const proposalReady = Boolean(
+    terms?.draft_item &&
+      terms?.draft_price_cents != null &&
+      terms?.draft_condition,
+  );
+  const canStartVoice = selfRole === "SELLER" || proposalReady;
 
   /**
    * Send a typed line into the negotiation.
@@ -584,11 +593,13 @@ export function VoiceRoom({
       <div className="mt-5 grid items-start gap-5 lg:grid-cols-[minmax(0,1fr)_360px] xl:grid-cols-[minmax(0,1fr)_390px]">
         {/* ================= left: the call ================= */}
         <div className="min-w-0 space-y-5">
-          {/* Voice is the default, not the requirement. Either channel writes
-              to the same transcript and gets the same arbitrator. */}
+          {/* Intake is voice-only and private. Once the offer is ready, either
+              channel can use the same mediated negotiation. */}
           <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-[var(--color-line)] bg-[var(--color-panel)] p-2 pl-4">
             <p className="text-[13px] leading-relaxed text-[var(--color-ink-dim)]">
-              {channel === "voice"
+              {!proposalReady
+                ? "Private seller intake is active. The Buyer receives no raw audio or transcript."
+                : channel === "voice"
                 ? "Speak with the other party — Aegis chairs the call."
                 : "Prefer not to speak? Type instead — Aegis chairs it the same way."}
             </p>
@@ -607,11 +618,14 @@ export function VoiceRoom({
                   key={key}
                   role="tab"
                   aria-selected={channel === key}
+                  disabled={key === "text" && !proposalReady}
                   onClick={() => setChannel(key)}
                   className={`rounded-md px-3 py-1.5 text-[13px] font-semibold transition-colors ${
                     channel === key
                       ? "bg-[var(--color-aegis)]/15 text-[var(--color-aegis)]"
-                      : "text-[var(--color-ink-dim)] hover:text-[var(--color-ink)]"
+                      : key === "text" && !proposalReady
+                        ? "cursor-not-allowed text-[var(--color-ink-faint)]"
+                        : "text-[var(--color-ink-dim)] hover:text-[var(--color-ink)]"
                   }`}
                 >
                   {label}
@@ -723,8 +737,10 @@ export function VoiceRoom({
                 </p>
                 <p className="mt-1.5 max-w-sm text-center text-[13px] leading-relaxed text-[var(--color-ink-dim)]">
                   {live
-                    ? "Both parties speak into this device. State the item, the price, and what counts as done."
-                    : "Aegis joins as a neutral third party, drafts the contract from what it hears, and holds the funds."}
+                    ? "Aegis privately processes each turn and relays a structured response. Parties never hear each other directly."
+                    : selfRole === "BUYER" && !proposalReady
+                      ? "The Seller is preparing a private proposal. You will join when the structured offer is ready."
+                      : "Aegis privately gathers the Seller's offer, then presents a structured proposal to the Buyer."}
                 </p>
 
                 {error && (
@@ -787,12 +803,16 @@ export function VoiceRoom({
                   ) : (
                     <PrimaryButton
                       onClick={connect}
-                      disabled={state === "connecting"}
+                      disabled={state === "connecting" || !canStartVoice}
                       className="px-6"
                     >
                       {state === "connecting"
                         ? "Connecting…"
-                        : "Start negotiation"}
+                        : selfRole === "SELLER" && !proposalReady
+                          ? "Begin private seller intake"
+                          : selfRole === "BUYER" && !proposalReady
+                            ? "Waiting for seller proposal"
+                            : "Join mediated negotiation"}
                     </PrimaryButton>
                   )}
                 </div>

@@ -88,6 +88,10 @@ export function useAegisVoice(
   // an audio item began instead of guessing after the floor may have changed.
   const audioItemRoles = useRef(new Map<string, string>());
   const activeRoleRef = useRef<string | null>(null);
+  // Seller intake is private. Nothing from it is copied into the shared
+  // transcript until all three offer terms have been captured.
+  const sellerIntakeCompleteRef = useRef(false);
+  const buyerJoinedRef = useRef(false);
 
   const peer = usePeerAudio(roomId, selfId);
 
@@ -209,6 +213,15 @@ export function useAegisVoice(
 
       const result = await runTool(name, args);
 
+      if (
+        name === "update_deal_terms" &&
+        result?.ok &&
+        Array.isArray(result?.still_missing) &&
+        result.still_missing.length === 0
+      ) {
+        sellerIntakeCompleteRef.current = true;
+      }
+
       if (name === "issue_vocal_challenge" && result?.phrase) {
         setChallengePhrase(result.phrase as string);
         awaitingChallenge.current = true;
@@ -236,6 +249,10 @@ export function useAegisVoice(
   const persist = useCallback(
     async (speaker: string, content: string) => {
       if (!content.trim()) return;
+      // The Buyer may not receive the Seller's raw intake or the AI's private
+      // intake prompts. Share only after the Buyer has joined to receive the
+      // synthesized proposal; later turns remain in the audit trail.
+      if (!sellerIntakeCompleteRef.current || !buyerJoinedRef.current) return;
       const supabase = createClient();
       const {
         data: { user },
@@ -458,7 +475,11 @@ export function useAegisVoice(
       );
       if (!configRes.ok)
         throw new Error("Could not load the arbitrator configuration.");
-      const config = await configRes.json();
+      const configPayload = await configRes.json();
+      const config = configPayload.session ?? configPayload;
+      sellerIntakeCompleteRef.current = Boolean(
+        configPayload.seller_intake_complete,
+      );
 
       const stream = await navigator.mediaDevices.getUserMedia({
         audio: {
@@ -496,7 +517,7 @@ export function useAegisVoice(
       dcRef.current = dc;
       dc.onmessage = onServerEvent;
       dc.onopen = () => {
-        // Send the config through EXACTLY as the backend built it. `session.type`
+        // Send the session config through exactly as the backend built it. `session.type`
         // is required; stripping any field here silently voids the whole update
         // and leaves the agent with no instructions and no tools.
         send({ type: "session.update", session: config });
@@ -508,14 +529,14 @@ export function useAegisVoice(
         );
         createResponse({
           instructions:
-            "Open the negotiation. In one sentence: you are Aegis, you hold " +
-            "the funds in escrow, and neither side has to trust the other. " +
-            "Then explain in one short sentence that each party must unmute " +
-            `to speak. Then address the ${selfLabel} — who is the one ` +
-            "currently unmuted and present — and ask them to state their " +
-            "side of the deal. End your turn with that question. Do NOT " +
-            `address the ${peerLabel} yet; they are still muted and cannot ` +
-            "answer you.",
+            sellerIntakeCompleteRef.current
+              ? `A structured offer is already prepared. Wait for the ${peerLabel} ` +
+                "to join, then present the proposal and begin mediated negotiation."
+              : `Begin the private Seller intake. The Buyer must not receive ` +
+                "or see this intake. Tell the Seller in one short sentence that " +
+                "you will turn their details into a buyer-ready offer, then ask " +
+                "for the product or service, specifications, price, delivery, " +
+                "and release condition. Ask the Seller to unmute to respond.",
         });
       };
 
@@ -839,6 +860,7 @@ export function useAegisVoice(
     if (state !== "live" || mode !== "HOST") return;
     if (peer.peerState !== "connected" || announcedJoin.current) return;
     announcedJoin.current = true;
+    buyerJoinedRef.current = true;
 
     send({
       type: "conversation.item.create",
@@ -849,11 +871,11 @@ export function useAegisVoice(
           {
             type: "input_text",
             text:
-              `[The ${peerLabel} has just joined the room. They can hear you ` +
-              `now and they can speak once they unmute. Greet the ${peerLabel} ` +
-              `by name, summarise in one sentence what the ${selfLabel} has ` +
-              `said so far, and ask the ${peerLabel} to unmute and give their ` +
-              `side of the deal.]`,
+              `[The ${peerLabel} has just joined the room. Present the ` +
+              `finalized structured proposal now. Do not repeat or reveal the ` +
+              `${selfLabel}'s private intake wording. State the offer, value, ` +
+              `price, delivery, and release condition, then ask the ${peerLabel} ` +
+              `for their response.]`,
           },
         ],
       },
@@ -929,6 +951,8 @@ export function useAegisVoice(
     aegisStreamRef.current = null;
     announcedJoin.current = false;
     lastAnnounced.current = null;
+    sellerIntakeCompleteRef.current = false;
+    buyerJoinedRef.current = false;
     setMode(null);
     setState("closed");
   }, [peer, seatCall]);

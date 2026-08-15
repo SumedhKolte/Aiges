@@ -8,12 +8,12 @@
  * watch the negotiation but never speak into it.
  *
  *   GUEST  --- mic ------------------>  HOST  --- mixed mic --->  OpenAI
- *   GUEST  <-- Aegis + host's mic ----  HOST  <-- Aegis voice --  OpenAI
+ *   GUEST  <-- Aegis only ------------  HOST  <-- Aegis voice --  OpenAI
  *
  * The host mixes its own microphone with the guest's incoming track in Web
  * Audio and hands the single mixed stream to the Realtime session, so Aegis
- * hears one room with two people in it. The return path carries Aegis's voice
- * plus the host's microphone back to the guest.
+ * hears one room with two people in it. The return path carries only Aegis's
+ * voice. Parties never hear one another's unprocessed audio.
  *
  * Signalling rides Supabase Realtime broadcast — no extra service, no SFU.
  * Media itself is peer-to-peer.
@@ -206,10 +206,10 @@ export function usePeerAudio(roomId: string, selfId: string) {
       micGainRef.current = micGain;
       ctx.createMediaStreamSource(localMic).connect(micGain).connect(mixDest);
 
-      // Everything the guest should hear.
+      // Everything the guest should hear. Do not connect the host mic here:
+      // Aegis is a mediation boundary, not a party-to-party call bridge.
       const returnDest = ctx.createMediaStreamDestination();
       returnDestRef.current = returnDest;
-      ctx.createMediaStreamSource(localMic).connect(returnDest);
 
       // Attribution. Aegis receives one mixed stream and cannot tell the two
       // voices apart, but the host holds both sources separately — so who has
@@ -316,11 +316,8 @@ export function usePeerAudio(roomId: string, selfId: string) {
               .createMediaStreamSource(e.streams[0])
               .connect(mixDestRef.current);
           }
-          // And the host hears the guest directly.
-          const el = new Audio();
-          el.autoplay = true;
-          el.srcObject = e.streams[0];
-          playbackRef.current = el;
+          // Do not play the guest's raw audio on the host. The model receives
+          // it in the private mix and relays only its mediated response.
           moveTo("connected");
         };
 

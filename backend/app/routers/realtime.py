@@ -30,9 +30,20 @@ async def session_config(
     just replies to whoever spoke last.
     """
     settings = get_settings()
-    instructions = room_instructions(admin(), room_id, channel="voice")
+    db = admin()
+    instructions = room_instructions(db, room_id, channel="voice")
+    room = None
+    if room_id:
+        room = (
+            db.table("rooms")
+            .select("draft_item, draft_price_cents, draft_condition")
+            .eq("id", room_id)
+            .maybe_single()
+            .execute()
+            .data
+        )
 
-    return {
+    session = {
         # `type` is REQUIRED by the GA Realtime API and must survive all the way
         # into the session.update payload. Dropping it makes the whole update
         # fail, which silently leaves the agent with no instructions and no
@@ -58,7 +69,9 @@ async def session_config(
                     "type": "server_vad",
                     "threshold": 0.62,
                     "prefix_padding_ms": 300,
-                    "silence_duration_ms": 820,
+                    # Short turn detection keeps mediation responsive without
+                    # forcing the model to answer a mid-sentence pause.
+                    "silence_duration_ms": 500,
                     # Audio alone has no trustworthy Buyer/Seller identity.
                     # Respond only after the client sends an attributed turn.
                     "create_response": False,
@@ -67,6 +80,18 @@ async def session_config(
             },
             "output": {"voice": settings.openai_realtime_voice},
         },
+    }
+    # Metadata for the browser, intentionally outside the Realtime session
+    # object so it is never forwarded to OpenAI as an unknown field.
+    return {
+        "session": session,
+        "seller_intake_complete": bool(
+            room_id
+            and room
+            and room.get("draft_item")
+            and room.get("draft_price_cents")
+            and room.get("draft_condition")
+        ),
     }
 
 
