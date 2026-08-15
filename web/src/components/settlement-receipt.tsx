@@ -128,19 +128,36 @@ export function SettlementReceipt({ contractId }: { contractId: string }) {
     URL.revokeObjectURL(url);
   }
 
+  function downloadJson() {
+    if (!receipt) return;
+    const blob = new Blob([JSON.stringify(receipt, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `aegis-proof-bundle-${contractId.slice(0, 8)}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
   return (
     <Panel className="mt-4 p-6">
-      <SectionLabel>Settlement receipt</SectionLabel>
+      <SectionLabel>Proof bundle</SectionLabel>
       <p className="mt-2 text-[14px] leading-relaxed text-[var(--color-ink-dim)]">
         The full audit trail: terms, every risk event, the liveness check, the
-        vision verdict, any jury ruling, and the raw ledger entries.
+        vision verdict, any jury ruling, and the raw ledger entries. Export it
+        as readable text or machine-readable JSON.
       </p>
 
       <div className="mt-4 flex flex-wrap gap-2">
         <GhostButton onClick={load} disabled={busy}>
           {busy ? "Assembling…" : receipt ? "Refresh" : "Build receipt"}
         </GhostButton>
-        {receipt && <GhostButton onClick={download}>Download</GhostButton>}
+        {receipt && (
+          <>
+            <GhostButton onClick={download}>Download text</GhostButton>
+            <GhostButton onClick={downloadJson}>Download JSON</GhostButton>
+          </>
+        )}
       </div>
 
       {error && (

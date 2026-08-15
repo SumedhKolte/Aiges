@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { RoomLauncher } from "@/components/room-launcher";
+import { ProtectionStack } from "@/components/protection-stack";
 import { TopNav } from "@/components/top-nav";
 import { EmptyState, Money, Panel, SectionLabel, StatusPill } from "@/components/ui";
 import { relativeTime } from "@/lib/format";
@@ -37,6 +38,7 @@ export default async function Dashboard() {
     ]);
 
   const name = profile?.name ?? "Trader";
+  const settledCount = profile?.deals_closed ?? 0;
 
   return (
     <>
@@ -120,6 +122,12 @@ export default async function Dashboard() {
             </Link>
           </Panel>
         </section>
+
+        <ProtectionStack
+          contractCount={contracts?.length ?? 0}
+          settledCount={settledCount}
+          hasWallet={Boolean(wallet)}
+        />
 
         {/* ---------------- launcher + contracts ---------------- */}
         <section className="mt-4">

@@ -7,6 +7,24 @@ import { GhostButton, Panel, PrimaryButton, SectionLabel } from "@/components/ui
 
 const API = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
+const DEMO_SCENARIOS = [
+  {
+    label: "Landing page",
+    title: "Landing page redesign",
+    detail: "Buyer + designer",
+  },
+  {
+    label: "Brand kit",
+    title: "Brand identity package",
+    detail: "Fast visual proof",
+  },
+  {
+    label: "Data cleanup",
+    title: "Customer data cleanup",
+    detail: "Clear acceptance test",
+  },
+] as const;
+
 async function authedPost(path: string, body: unknown) {
   const supabase = createClient();
   const {
@@ -33,6 +51,7 @@ export function RoomLauncher() {
   const [code, setCode] = useState("");
   const [busy, setBusy] = useState<"create" | "join" | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [selectedDemo, setSelectedDemo] = useState<string | null>(null);
 
   async function create() {
     setBusy("create");
@@ -66,7 +85,44 @@ export function RoomLauncher() {
 
   return (
     <Panel className="p-5">
-      <SectionLabel>Start a negotiation</SectionLabel>
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <SectionLabel>Start a negotiation</SectionLabel>
+          <p className="mt-1.5 text-[13px] text-[var(--color-ink-faint)]">
+            Pick a scenario or make your own.
+          </p>
+        </div>
+        <span className="rounded-full border border-[#8d9bff]/30 bg-[#8d9bff]/10 px-2 py-1 text-[10px] font-semibold tracking-wide text-[#aeb7ff] uppercase">
+          Demo ready
+        </span>
+      </div>
+
+      <div className="mt-4 grid grid-cols-3 gap-2">
+        {DEMO_SCENARIOS.map((scenario) => (
+          <button
+            key={scenario.label}
+            type="button"
+            onClick={() => {
+              setTitle(scenario.title);
+              setRole("BUYER");
+              setSelectedDemo(scenario.label);
+              setError(null);
+            }}
+            className={`rounded-lg border p-2.5 text-left transition-colors ${
+              selectedDemo === scenario.label
+                ? "border-[var(--color-aegis)]/60 bg-[var(--color-aegis)]/10"
+                : "border-[var(--color-line)] bg-[var(--color-void)] hover:border-[var(--color-line-bright)]"
+            }`}
+          >
+            <span className="block truncate text-[11px] font-semibold text-[var(--color-ink)]">
+              {scenario.label}
+            </span>
+            <span className="mt-1 block truncate text-[10px] text-[var(--color-ink-faint)]">
+              {scenario.detail}
+            </span>
+          </button>
+        ))}
+      </div>
 
       <div className="mt-4 space-y-3">
         <input

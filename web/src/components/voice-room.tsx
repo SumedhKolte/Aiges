@@ -9,6 +9,11 @@ import { LiveTerms, type DraftTerms } from "@/components/live-terms";
 import { VoiceForensics, type Challenge } from "@/components/voice-forensics";
 import { CounterpartyRisk } from "@/components/counterparty-risk";
 import { JoinSeat } from "@/components/join-seat";
+import { DealBrief } from "@/components/deal-brief";
+import { ProtectionIndex } from "@/components/protection-index";
+import { ClauseHardener } from "@/components/clause-hardener";
+import { NegotiationReplay } from "@/components/negotiation-replay";
+import { PrototypeBoundary } from "@/components/prototype-boundary";
 import { Money, Panel, PrimaryButton, SectionLabel, StatusPill } from "@/components/ui";
 
 type RiskEvent = {
@@ -274,75 +279,103 @@ export function VoiceRoom({
   }
 
   return (
-    <main className="mx-auto max-w-6xl px-5 py-7">
+    <main className="mx-auto max-w-7xl px-4 py-5 sm:px-5 sm:py-7">
       {/* ---------------- header ---------------- */}
-      <div className="flex flex-wrap items-start justify-between gap-4">
-        <div>
-          <h1 className="text-[22px] font-semibold tracking-tight">{title}</h1>
-          <p className="mt-1 text-[14px] text-[var(--color-ink-dim)]">
-            You are the {role.toLowerCase()}
-          </p>
-
-          {/* Both seats, live. Whoever opened the room needs to see the other
-              party arrive without reloading the page. */}
-          <div className="mt-2.5 flex items-center gap-2">
-            {(
-              [
-                ["Buyer", seats.buyer],
-                ["Seller", seats.seller],
-              ] as const
-            ).map(([label, id]) => (
+      <section className="panel p-4 sm:p-5">
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+          <div className="min-w-0">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-[10px] font-semibold tracking-[0.14em] text-[var(--color-ink-faint)] uppercase">
+                Negotiation room
+              </span>
+              <span className="h-1 w-1 rounded-full bg-[var(--color-line-bright)]" />
               <span
-                key={label}
-                className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-semibold transition-colors duration-300 ${
-                  id
-                    ? "border-[var(--color-signal)]/40 bg-[var(--color-signal)]/10 text-[var(--color-signal)]"
-                    : "border-[var(--color-line-bright)] bg-[var(--color-panel-2)] text-[var(--color-ink-faint)]"
+                className={`inline-flex items-center gap-1.5 rounded-full border px-2 py-1 text-[10px] font-semibold uppercase ${
+                  live
+                    ? "border-[var(--color-aegis)]/35 bg-[var(--color-aegis)]/10 text-[var(--color-aegis)]"
+                    : "border-[var(--color-line-bright)] bg-[var(--color-panel-2)] text-[var(--color-ink-dim)]"
                 }`}
               >
                 <span
                   className={`h-1.5 w-1.5 rounded-full ${
-                    id ? "bg-current" : "animate-pulse-dot bg-current"
+                    live ? "animate-pulse-dot bg-current" : "bg-[var(--color-ink-faint)]"
                   }`}
                 />
-                {label}
-                {id === selfId && " (you)"}
-                {!id && " — waiting"}
+                {live
+                  ? "Live session"
+                  : bothSeated
+                    ? "Ready to connect"
+                    : "Waiting for second party"}
               </span>
-            ))}
+            </div>
+            <h1 className="mt-3 truncate text-[22px] font-semibold tracking-tight sm:text-[25px]">
+              {title}
+            </h1>
+            <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-[13px] text-[var(--color-ink-dim)]">
+              <span>You are the {role.toLowerCase()}</span>
+              {mode && (
+                <span className="text-[var(--color-ink-faint)]">
+                  · {mode === "HOST" ? "Hosting Aegis" : "Bridged through host"}
+                </span>
+              )}
+              {peerState === "connected" && (
+                <span className="text-[var(--color-signal)]">· Peer audio connected</span>
+              )}
+              {peerState === "waiting" && (
+                <span className="text-[var(--color-ink-faint)]">· Waiting for peer audio</span>
+              )}
+              {peerState === "connecting" && (
+                <span className="text-[var(--color-ink-faint)]">· Connecting peer audio</span>
+              )}
+              {peerState === "failed" && (
+                <span className="text-[var(--color-caution)]">· Peer audio needs attention</span>
+              )}
+            </div>
+            <div className="mt-3 flex flex-wrap items-center gap-2">
+              {(
+                [
+                  ["Buyer", seats.buyer],
+                  ["Seller", seats.seller],
+                ] as const
+              ).map(([label, id]) => (
+                <span
+                  key={label}
+                  className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-semibold transition-colors duration-300 ${
+                    id
+                      ? "border-[var(--color-signal)]/40 bg-[var(--color-signal)]/10 text-[var(--color-signal)]"
+                      : "border-[var(--color-line-bright)] bg-[var(--color-panel-2)] text-[var(--color-ink-faint)]"
+                  }`}
+                >
+                  <span
+                    className={`h-1.5 w-1.5 rounded-full ${
+                      id ? "bg-current" : "animate-pulse-dot bg-current"
+                    }`}
+                  />
+                  {label}
+                  {id === selfId && " (you)"}
+                  {!id && " — waiting"}
+                </span>
+              ))}
+            </div>
           </div>
 
-          {!bothSeated && (
-            <p className="mt-2 text-[13px] text-[var(--color-ink-faint)]">
-              Share the room code below. They will appear here the moment they
-              join — no need to reload.
-            </p>
-          )}
-          {mode && (
-            <p className="mt-1.5 text-[13px] text-[var(--color-ink-faint)]">
-              {mode === "HOST"
-                ? "Hosting the arbitrator on this device"
-                : "Bridged in through the host"}
-              {peerState === "connected" && " · peer audio connected"}
-              {peerState === "waiting" && " · waiting for the other party to join the call"}
-              {peerState === "connecting" && " · connecting peer audio"}
-              {peerState === "failed" && " · peer audio failed"}
-            </p>
-          )}
+          <button
+            onClick={copyCode}
+            aria-label="Copy room code"
+            className="flex shrink-0 items-center justify-between gap-5 rounded-xl border border-[var(--color-line-bright)] bg-[var(--color-void)] px-4 py-2.5 text-left transition-colors hover:border-[var(--color-aegis)]/50 sm:min-w-[142px]"
+          >
+            <div>
+              <div className="text-[10px] tracking-[0.14em] text-[var(--color-ink-faint)] uppercase">
+                {copied ? "Copied" : "Room code"}
+              </div>
+              <div className="tnum mt-0.5 text-[18px] font-semibold tracking-[0.2em] text-[var(--color-aegis)]">
+                {code}
+              </div>
+            </div>
+            <span className="text-[15px] text-[var(--color-ink-faint)]">↗</span>
+          </button>
         </div>
-
-        <button
-          onClick={copyCode}
-          className="panel px-4 py-2.5 text-left transition-colors hover:border-[var(--color-line-bright)]"
-        >
-          <div className="text-[10px] tracking-[0.14em] text-[var(--color-ink-faint)] uppercase">
-            {copied ? "Copied" : "Room code"}
-          </div>
-          <div className="tnum text-[18px] font-semibold tracking-[0.2em] text-[var(--color-aegis)]">
-            {code}
-          </div>
-        </button>
-      </div>
+      </section>
 
       {role === "Observer" && (
         <JoinSeat
@@ -352,7 +385,7 @@ export function VoiceRoom({
       )}
 
       {!bothSeated && role !== "Observer" && (
-        <div className="animate-rise mt-5 rounded-xl border border-[var(--color-line)] bg-[var(--color-panel)] p-4">
+        <section className="animate-rise mt-5 rounded-xl border border-[var(--color-line)] bg-[var(--color-panel)] p-4">
           <p className="text-[11px] tracking-[0.14em] text-[var(--color-ink-faint)] uppercase">
             Invite the other party
           </p>
@@ -368,11 +401,12 @@ export function VoiceRoom({
             </button>
           </div>
           <p className="mt-2 text-[12px] leading-relaxed text-[var(--color-ink-dim)]">
-            Send them this link. It seats them in this room directly — they do
-            not need to create one of their own.
+            Send this link to seat the other party in the room directly.
           </p>
-        </div>
+        </section>
       )}
+
+      <PrototypeBoundary />
 
       {/* ---------------- security halt banner ---------------- */}
       {halted && (
@@ -402,10 +436,14 @@ export function VoiceRoom({
         </div>
       )}
 
-      <div className="mt-5 grid gap-4 lg:grid-cols-[1fr_340px]">
+      {!live && !contract && (
+        <DealBrief title={title} role={role} />
+      )}
+
+      <div className="mt-5 grid items-start gap-5 lg:grid-cols-[minmax(0,1fr)_360px] xl:grid-cols-[minmax(0,1fr)_390px]">
         {/* ================= left: the call ================= */}
-        <div className="space-y-4">
-          <Panel className="flex flex-col items-center px-6 py-9">
+        <div className="min-w-0 space-y-5">
+          <Panel className="flex min-h-[390px] flex-col items-center justify-center px-6 py-10 sm:min-h-[430px]">
             {/* the orb */}
             <div className="relative flex h-32 w-32 items-center justify-center">
               <div
@@ -484,11 +522,16 @@ export function VoiceRoom({
           </Panel>
 
           {/* transcript */}
-          <Panel className="p-5">
-            <SectionLabel>Live transcript</SectionLabel>
+          <Panel className="min-h-[230px] p-5">
+            <div className="flex items-center justify-between gap-3">
+              <SectionLabel>Live transcript</SectionLabel>
+              <span className="tnum text-[11px] text-[var(--color-ink-faint)]">
+                {feed.length ? `${feed.length} events` : "Awaiting audio"}
+              </span>
+            </div>
             <div
               ref={feedRef}
-              className="mt-3 max-h-80 space-y-3 overflow-y-auto pr-1"
+              className="mt-4 max-h-80 space-y-3 overflow-y-auto border-t border-[var(--color-line)] pt-3 pr-1"
             >
               {feed.length === 0 ? (
                 <p className="py-8 text-center text-[14px] text-[var(--color-ink-faint)]">
@@ -514,13 +557,25 @@ export function VoiceRoom({
               )}
             </div>
           </Panel>
+
+          <NegotiationReplay feed={feed} risks={risks} />
         </div>
 
         {/* ================= right: forensics + contract ================= */}
-        <div className="space-y-4">
+        <aside className="min-w-0 space-y-4">
+          <ProtectionIndex
+            terms={terms}
+            riskScore={riskScore}
+            speakers={speakers}
+            challenges={challenges}
+            hasContract={Boolean(contract)}
+          />
+
           <CounterpartyRisk profileId={counterpartyId} />
 
           <LiveTerms terms={terms} locked={Boolean(contract)} />
+
+          <ClauseHardener terms={terms} />
 
           <VoiceForensics speakers={speakers} challenges={challenges} />
 
@@ -635,7 +690,7 @@ export function VoiceRoom({
               </p>
             </Panel>
           )}
-        </div>
+        </aside>
       </div>
     </main>
   );

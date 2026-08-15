@@ -4,6 +4,8 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { SettlementReceipt } from "@/components/settlement-receipt";
+import { AgreementFingerprint } from "@/components/agreement-fingerprint";
+import { PrototypeBoundary } from "@/components/prototype-boundary";
 import {
   GhostButton,
   Money,
@@ -272,6 +274,10 @@ export function ContractWorkspace({
           </p>
         </div>
       </Panel>
+
+      <PrototypeBoundary />
+
+      <AgreementFingerprint contract={contract} />
 
       {error && (
         <p className="mt-4 rounded-lg border border-[var(--color-halt)]/40 bg-[var(--color-halt)]/10 px-4 py-3 text-[14px] text-[var(--color-halt)]">
