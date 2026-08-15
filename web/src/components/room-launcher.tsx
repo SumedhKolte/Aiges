@@ -92,9 +92,9 @@ export function RoomLauncher() {
             Pick a scenario or make your own.
           </p>
         </div>
-        <span className="rounded-full border border-[#8d9bff]/30 bg-[#8d9bff]/10 px-2 py-1 text-[10px] font-semibold tracking-wide text-[#aeb7ff] uppercase">
+        {/* <span className="rounded-full border border-[#8d9bff]/30 bg-[#8d9bff]/10 px-2 py-1 text-[10px] font-semibold tracking-wide text-[#aeb7ff] uppercase">
           Demo ready
-        </span>
+        </span> */}
       </div>
 
       <div className="mt-4 grid grid-cols-3 gap-2">

@@ -58,6 +58,46 @@ async def chat(
     return resp.json()["choices"][0]["message"]["content"]
 
 
+async def chat_tools(
+    *,
+    model: str,
+    messages: list[dict[str, Any]],
+    tools: list[dict[str, Any]],
+    max_tokens: int = 700,
+    temperature: float = 0.3,
+) -> dict[str, Any]:
+    """One chat completion that is allowed to call tools.
+
+    Returns the raw assistant message so the caller can run any `tool_calls`
+    and feed the results back in. `chat` above is deliberately left alone: it
+    takes a single system/user pair and returns text, which is all the jury,
+    vision, and reel paths ever need.
+    """
+    settings = get_settings()
+
+    async with httpx.AsyncClient(timeout=90.0) as client:
+        resp = await client.post(
+            f"{OPENAI_BASE}/chat/completions",
+            headers={
+                "Authorization": f"Bearer {settings.openai_api_key}",
+                "Content-Type": "application/json",
+            },
+            json={
+                "model": model,
+                "messages": messages,
+                "tools": tools,
+                "tool_choice": "auto",
+                "max_tokens": max_tokens,
+                "temperature": temperature,
+            },
+        )
+
+    if resp.status_code != 200:
+        raise HTTPException(502, f"OpenAI error ({resp.status_code}): {resp.text[:400]}")
+
+    return resp.json()["choices"][0]["message"]
+
+
 async def chat_json(**kwargs: Any) -> dict:
     """`chat` where a structured schema was supplied; parses the result."""
     raw = await chat(**kwargs)

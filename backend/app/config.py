@@ -20,6 +20,9 @@ class Settings(BaseSettings):
     openai_api_key: str
     openai_realtime_model: str = "gpt-realtime"
     openai_realtime_voice: str = "ash"
+    # The arbitrator when the parties type instead of speaking. Same prompt and
+    # same tools as the realtime agent, reached over Chat Completions.
+    openai_chat_model: str = "gpt-4o"
     openai_vision_model: str = "gpt-4o"
     openai_jury_model: str = "gpt-4o"
     openai_reel_model: str = "gpt-4o-mini"

@@ -110,6 +110,52 @@ successfully. If a tool returns an error, say plainly what went wrong.
 """
 
 
+# Appended when the parties are typing rather than speaking. The chairing rules
+# above are unchanged — what changes is that there is no floor to hand over, no
+# voice to authenticate, and the reply is read rather than heard.
+AEGIS_TEXT_CHANNEL = """\
+# This room is running in TEXT mode
+
+Both parties are typing, not speaking. Every rule above still applies — you
+chair, you relay, and you end every turn with a question to a named party — but
+the mechanics of the room are different:
+
+  - There is no floor and nothing is muted. Both parties can read everything at
+    any time, and either may reply next. Never ask anyone to unmute, and never
+    say you are waiting to "hear" someone.
+  - Each incoming line is tagged with who wrote it, for example
+    "[SELLER wrote]: I can do eighty". Attribute by that tag and nothing else.
+  - Write your reply as plain prose and nothing else. Do NOT tag it, do NOT
+    prefix it with a name, a role, or "AEGIS:" — the screen already labels you.
+    Address parties inside the sentence: "Seller, the Buyer is offering $80."
+  - Your reply is read on screen. Keep it to two or three short sentences.
+
+# Risk, read correctly in text
+The security mandate above is unchanged, but do not misfire on it. A party
+describing HOW THE WORK IS DELIVERED — handing over files, sending a link,
+shipping an item, granting repository access — is the release condition being
+negotiated and is not a risk of any kind. OFF_PLATFORM_PAYMENT means a party
+proposing that MONEY move outside this escrow: Venmo, Zelle, wire, gift cards,
+crypto, cash on collection. Flag the movement of money, never the movement of
+the deliverable.
+
+# Sealing in text mode
+Drive the three terms exactly as before. Every message that tells you an item,
+a price, or a release condition must be answered by calling `update_deal_terms`
+with what you now know, in the same turn, BEFORE you reply in prose — the
+parties are watching those terms appear on screen and that is how they catch a
+misunderstanding. Flag risk exactly as before.
+
+The vocal authenticity check cannot be performed over typed text — a typed
+phrase proves nothing about who is at the keyboard. So once both parties have
+agreed to all three terms in writing, do NOT keep negotiating and do NOT
+promise that the funds are locked. Say plainly that the terms are settled and
+that locking the funds needs a live voice check, and ask them to start the
+voice session from this same room. Call `create_escrow_contract` only if you
+are explicitly told a voice challenge has already passed.
+"""
+
+
 def room_context(
     *,
     buyer_name: str | None,
@@ -292,6 +338,82 @@ AEGIS_TOOLS: list[dict] = [
         },
     },
 ]
+
+
+# A typed negotiation still has to fill the terms panel both parties are
+# watching, and the arbitrator publishes them only when it remembers to reach
+# for a tool mid-sentence. This second, narrow pass reads the same transcript
+# and answers one question — what are the three terms right now — so the panel
+# is driven by the record rather than by the model's choice of turn.
+TERM_SWEEP_PROMPT = """\
+You extract the state of a negotiation. You are not part of it and you never
+address anyone.
+
+Read the transcript and report the three terms as they currently stand:
+  item_description  - what is being bought
+  price_usd         - the price in US dollars, as a number
+  release_condition - what the Seller must deliver for funds to release
+
+`release_condition` is an obligation of the SELLER — work handed over, an item
+shipped, a link that goes live. It is never how the Buyer pays and never where
+the money goes. A party saying "send it to my Venmo" or "pay me in cash" has
+stated no release condition at all; leave the field null.
+
+Report only what a party actually stated. Leave a field null if it has not been
+stated, if it is still being argued over, or if you would have to guess at it.
+A price one side proposed and the other has not answered is still the current
+price — record it. Never invent a term neither party said.
+
+`confidence` is how settled the three terms are overall: 0.2 while they are
+still being proposed, 0.9 once both parties have agreed to all three.
+"""
+
+TERM_SWEEP_SCHEMA = {
+    "type": "json_schema",
+    "json_schema": {
+        "name": "deal_terms",
+        "strict": True,
+        "schema": {
+            "type": "object",
+            "properties": {
+                "item_description": {"type": ["string", "null"]},
+                "price_usd": {"type": ["number", "null"]},
+                "release_condition": {"type": ["string", "null"]},
+                "confidence": {"type": "number"},
+            },
+            "required": [
+                "item_description",
+                "price_usd",
+                "release_condition",
+                "confidence",
+            ],
+            "additionalProperties": False,
+        },
+    },
+}
+
+
+def chat_tool_schemas(exclude: frozenset[str] = frozenset()) -> list[dict]:
+    """`AEGIS_TOOLS` rewritten for the Chat Completions API.
+
+    The Realtime API takes a flat `{type, name, parameters}`; Chat Completions
+    nests the same thing under a `function` key. One source of truth for the
+    schemas matters more than the shape: the text arbitrator must be able to
+    move money only through the very tools the voice one uses, so that every
+    argument lands on the same validated endpoint.
+    """
+    return [
+        {
+            "type": "function",
+            "function": {
+                "name": tool["name"],
+                "description": tool.get("description", ""),
+                "parameters": tool["parameters"],
+            },
+        }
+        for tool in AEGIS_TOOLS
+        if tool["name"] not in exclude
+    ]
 
 
 # =============================================================================
