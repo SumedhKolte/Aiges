@@ -17,6 +17,11 @@
  *
  * Signalling rides Supabase Realtime broadcast — no extra service, no SFU.
  * Media itself is peer-to-peer.
+ *
+ * Rendezvous is deliberately order-independent: whoever arrives second says
+ * hello, whoever is already there answers, and only then does anyone dial.
+ * Neither side may broadcast before its own channel has joined, or it will be
+ * talking into a socket it is not yet listening on.
  */
 
 import { useCallback, useMemo, useRef, useState } from "react";
@@ -31,7 +36,8 @@ const ICE: RTCConfiguration = {
 };
 
 export type PeerRole = "HOST" | "GUEST";
-export type PeerState = "idle" | "waiting" | "connecting" | "connected" | "failed";
+export type PeerState =
+  "idle" | "waiting" | "connecting" | "connected" | "failed";
 
 /** Which microphone currently holds the floor, from the host's point of view. */
 export type ActiveSource = "LOCAL" | "REMOTE" | "BOTH" | null;
@@ -44,6 +50,9 @@ const DOMINANCE = 1.6;
 // Hold the floor briefly after speech stops so ordinary pauses mid-sentence
 // do not flap the attribution back and forth.
 const FLOOR_HOLD_MS = 700;
+// A guest that has already dialled waits this long between re-announcements,
+// so a host arriving late is always found without flooding the channel.
+const REDIAL_COOLDOWN_MS = 2500;
 
 /** Rolling loudness probe for one stream. */
 function makeProbe(ctx: AudioContext, stream: MediaStream) {
@@ -64,17 +73,50 @@ function makeProbe(ctx: AudioContext, stream: MediaStream) {
   };
 }
 
+/**
+ * Resolve once the channel has actually joined.
+ *
+ * `channel.subscribe()` returns the channel, not a promise — awaiting it is a
+ * no-op that resolves on the next tick, long before the socket has joined.
+ * Broadcasting in that window silently falls back to REST: the message reaches
+ * the other party, but we are not yet listening for their reply. That is how
+ * both browsers end up waiting on each other forever, each convinced it has
+ * announced itself.
+ */
+function awaitSubscribed(channel: RealtimeChannel, timeoutMs = 10_000) {
+  return new Promise<void>((resolve, reject) => {
+    const timer = setTimeout(
+      () => reject(new Error("Could not reach the signalling channel.")),
+      timeoutMs,
+    );
+    channel.subscribe((status) => {
+      if (status === "SUBSCRIBED") {
+        clearTimeout(timer);
+        resolve();
+      } else if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") {
+        clearTimeout(timer);
+        reject(new Error(`Signalling channel failed (${status}).`));
+      }
+    });
+  });
+}
+
 export function usePeerAudio(roomId: string, selfId: string) {
   const [peerState, setPeerState] = useState<PeerState>("idle");
   const [peerPresent, setPeerPresent] = useState(false);
   const [activeSource, setActiveSource] = useState<ActiveSource>(null);
+  /** Aegis's speaking state, as relayed to a guest by the host. */
+  const [aegisSpeaking, setAegisSpeaking] = useState(false);
   const activeSourceRef = useRef<ActiveSource>(null);
+  // Watchdogs need to read this without re-running on every render.
+  const peerStateRef = useRef<PeerState>("idle");
   const floorRafRef = useRef<number | null>(null);
   /** Gate on the local mic feeding Aegis. 0 = muted. */
   const micGainRef = useRef<GainNode | null>(null);
   const aegisAttachedRef = useRef(false);
   const attachAegisRef = useRef<((s: MediaStream | null) => void) | null>(null);
   const [remoteMuted, setRemoteMuted] = useState(true);
+  const mutedRef = useRef(true);
 
   const pcRef = useRef<RTCPeerConnection | null>(null);
   const channelRef = useRef<RealtimeChannel | null>(null);
@@ -87,6 +129,11 @@ export function usePeerAudio(roomId: string, selfId: string) {
   const mixDestRef = useRef<MediaStreamAudioDestinationNode | null>(null);
   const returnDestRef = useRef<MediaStreamAudioDestinationNode | null>(null);
   const playbackRef = useRef<HTMLAudioElement | null>(null);
+
+  const moveTo = useCallback((next: PeerState) => {
+    peerStateRef.current = next;
+    setPeerState(next);
+  }, []);
 
   const teardown = useCallback(() => {
     if (floorRafRef.current) cancelAnimationFrame(floorRafRef.current);
@@ -108,18 +155,32 @@ export function usePeerAudio(roomId: string, selfId: string) {
       playbackRef.current = null;
     }
     remoteStreamRef.current = null;
+    localMicRef.current = null;
     roleRef.current = null;
-    setPeerState("idle");
+    // These outlived the session they belonged to. Left set, the next call
+    // starts believing Aegis is already wired into the guest's return path and
+    // never attaches it — so on any second session the guest hears nothing.
+    aegisAttachedRef.current = false;
+    attachAegisRef.current = null;
+    micGainRef.current = null;
+    mutedRef.current = true;
+    setRemoteMuted(true);
+    setAegisSpeaking(false);
     setPeerPresent(false);
+    peerStateRef.current = "idle";
+    setPeerState("idle");
   }, []);
 
-  const signal = useCallback((event: string, payload: unknown) => {
-    void channelRef.current?.send({
-      type: "broadcast",
-      event,
-      payload: { from: selfId, ...(payload as object) },
-    });
-  }, [selfId]);
+  const signal = useCallback(
+    (event: string, payload: unknown) => {
+      void channelRef.current?.send({
+        type: "broadcast",
+        event,
+        payload: { from: selfId, ...(payload as object) },
+      });
+    },
+    [selfId],
+  );
 
   /**
    * HOST: returns the stream to hand to OpenAI — its own mic mixed with the
@@ -130,7 +191,7 @@ export function usePeerAudio(roomId: string, selfId: string) {
     async (localMic: MediaStream, aegisOutput: () => MediaStream | null) => {
       roleRef.current = "HOST";
       localMicRef.current = localMic;
-      setPeerState("waiting");
+      moveTo("waiting");
 
       const ctx = new AudioContext();
       ctxRef.current = ctx;
@@ -221,10 +282,18 @@ export function usePeerAudio(roomId: string, selfId: string) {
         setRemoteMuted(Boolean(payload.muted));
       });
 
-      channel.on("broadcast", { event: "guest-offer" }, async ({ payload }) => {
+      const answerOffer = async (payload: {
+        from: string;
+        sdp: RTCSessionDescriptionInit;
+      }) => {
         if (payload.from === selfId) return;
         setPeerPresent(true);
-        setPeerState("connecting");
+        moveTo("connecting");
+
+        // A guest that re-announces itself dials again. Replacing the
+        // connection without closing the old one leaves a live peer
+        // connection and its tracks behind on every retry.
+        pcRef.current?.close();
 
         const pc = new RTCPeerConnection(ICE);
         pcRef.current = pc;
@@ -252,19 +321,35 @@ export function usePeerAudio(roomId: string, selfId: string) {
           el.autoplay = true;
           el.srcObject = e.streams[0];
           playbackRef.current = el;
-          setPeerState("connected");
+          moveTo("connected");
         };
 
         pc.onicecandidate = (e) =>
           e.candidate && signal("host-ice", { candidate: e.candidate });
         pc.onconnectionstatechange = () => {
-          if (pc.connectionState === "failed") setPeerState("failed");
+          if (pc !== pcRef.current) return;
+          if (pc.connectionState === "failed") moveTo("failed");
+          if (pc.connectionState === "disconnected") moveTo("connecting");
         };
 
         await pc.setRemoteDescription(payload.sdp);
         const answer = await pc.createAnswer();
         await pc.setLocalDescription(answer);
         signal("host-answer", { sdp: answer });
+      };
+
+      channel.on("broadcast", { event: "guest-offer" }, ({ payload }) => {
+        void answerOffer(payload);
+      });
+
+      // A guest announcing itself after we came up. Answer so it knows to
+      // dial — this is the half of the handshake that makes arrival order
+      // stop mattering.
+      channel.on("broadcast", { event: "guest-hello" }, ({ payload }) => {
+        if (payload.from === selfId) return;
+        setPeerPresent(true);
+        signal("host-ready", {});
+        signal("floor", { muted: mutedRef.current });
       });
 
       channel.on("broadcast", { event: "guest-ice" }, ({ payload }) => {
@@ -272,13 +357,15 @@ export function usePeerAudio(roomId: string, selfId: string) {
         void pcRef.current?.addIceCandidate(payload.candidate).catch(() => {});
       });
 
-      await channel.subscribe();
-      // Tell any waiting guest that a host is now live.
+      // Join before announcing. Announcing first is the deadlock: the message
+      // goes out over the REST fallback, the guest dials in reply, and we are
+      // not yet on the socket to hear it.
+      await awaitSubscribed(channel);
       signal("host-ready", {});
 
       return mixDest.stream;
     },
-    [roomId, selfId, signal],
+    [moveTo, roomId, selfId, signal],
   );
 
   /** Called by the voice session the moment Aegis's own track arrives. */
@@ -286,30 +373,65 @@ export function usePeerAudio(roomId: string, selfId: string) {
     attachAegisRef.current?.(s);
   }, []);
 
-  /** Open or close this browser's mic into the negotiation. */
-  const setMuted = useCallback((muted: boolean) => {
-    // Host: gate the mix. Guest: gate the outgoing track.
-    if (micGainRef.current) {
-      micGainRef.current.gain.value = muted ? 0 : 1;
-    }
-    const local = localMicRef.current;
-    if (local && roleRef.current === "GUEST") {
-      local.getAudioTracks().forEach((tr) => (tr.enabled = !muted));
-    }
-    void channelRef.current?.send({
-      type: "broadcast",
-      event: "floor",
-      payload: { from: selfId, muted },
-    });
-  }, [selfId]);
+  /**
+   * HOST: tell the guest whether Aegis is talking right now.
+   *
+   * The guest holds no data channel, so without this its screen claims Aegis
+   * is listening while the arbitrator is mid-sentence — and the guest talks
+   * over it.
+   */
+  const announceAegis = useCallback(
+    (speaking: boolean) => {
+      if (roleRef.current !== "HOST") return;
+      signal("aegis", { speaking });
+    },
+    [signal],
+  );
 
-  /** GUEST: send our mic to the host and play back what the host returns. */
+  /** HOST: say we are going, so the guest can take the seat immediately. */
+  const announceLeaving = useCallback(() => {
+    if (roleRef.current !== "HOST") return;
+    signal("host-left", {});
+  }, [signal]);
+
+  /** Open or close this browser's mic into the negotiation. */
+  const setMuted = useCallback(
+    (muted: boolean) => {
+      mutedRef.current = muted;
+      // Host: gate the mix. Guest: gate the outgoing track.
+      if (micGainRef.current) {
+        micGainRef.current.gain.value = muted ? 0 : 1;
+      }
+      const local = localMicRef.current;
+      if (local && roleRef.current === "GUEST") {
+        local.getAudioTracks().forEach((tr) => (tr.enabled = !muted));
+      }
+      void channelRef.current?.send({
+        type: "broadcast",
+        event: "floor",
+        payload: { from: selfId, muted },
+      });
+    },
+    [selfId],
+  );
+
+  /**
+   * GUEST: send our mic to the host and play back what the host returns.
+   *
+   * `onHostGone` fires when the host we were bridged through stops answering —
+   * it ended its session, closed the tab, or dropped off the network. The
+   * caller uses it to claim the vacated seat rather than sit in a room with no
+   * arbitrator in it.
+   */
   const startGuest = useCallback(
-    async (localMic: MediaStream) => {
+    async (
+      localMic: MediaStream,
+      opts: { onHostGone?: (reason: "left" | "unreachable") => void } = {},
+    ) => {
       roleRef.current = "GUEST";
       localMicRef.current = localMic;
       localMic.getAudioTracks().forEach((tr) => (tr.enabled = false));
-      setPeerState("connecting");
+      moveTo("connecting");
 
       const supabase = createClient();
       const channel = supabase.channel(`peer:${roomId}`, {
@@ -327,16 +449,27 @@ export function usePeerAudio(roomId: string, selfId: string) {
         el.srcObject = e.streams[0];
         playbackRef.current = el;
         remoteStreamRef.current = e.streams[0];
-        setPeerState("connected");
+        moveTo("connected");
         setPeerPresent(true);
       };
       pc.onicecandidate = (e) =>
         e.candidate && signal("guest-ice", { candidate: e.candidate });
       pc.onconnectionstatechange = () => {
-        if (pc.connectionState === "failed") setPeerState("failed");
+        if (pc.connectionState === "failed") {
+          // ICE could not find a path between these two networks. With STUN
+          // only and no relay, this is terminal for the media path.
+          moveTo("failed");
+          opts.onHostGone?.("unreachable");
+        }
+        if (pc.connectionState === "disconnected") moveTo("connecting");
       };
 
+      let lastDialledAt = 0;
       const dial = async () => {
+        const now = Date.now();
+        if (pc.connectionState === "connected") return;
+        if (now - lastDialledAt < REDIAL_COOLDOWN_MS) return;
+        lastDialledAt = now;
         const offer = await pc.createOffer({ offerToReceiveAudio: true });
         await pc.setLocalDescription(offer);
         signal("guest-offer", { sdp: offer });
@@ -345,6 +478,11 @@ export function usePeerAudio(roomId: string, selfId: string) {
       channel.on("broadcast", { event: "floor" }, ({ payload }) => {
         if (payload.from === selfId) return;
         setRemoteMuted(Boolean(payload.muted));
+      });
+
+      channel.on("broadcast", { event: "aegis" }, ({ payload }) => {
+        if (payload.from === selfId) return;
+        setAegisSpeaking(Boolean(payload.speaking));
       });
 
       channel.on("broadcast", { event: "host-answer" }, async ({ payload }) => {
@@ -357,13 +495,27 @@ export function usePeerAudio(roomId: string, selfId: string) {
         if (payload.from === selfId || !payload.candidate) return;
         void pc.addIceCandidate(payload.candidate).catch(() => {});
       });
-      // If the host arrives after us, redial on their announcement.
-      channel.on("broadcast", { event: "host-ready" }, () => void dial());
+      // The host announces itself on start and again whenever a guest says
+      // hello, so this fires whichever of us arrived first.
+      channel.on("broadcast", { event: "host-ready" }, () => {
+        setPeerPresent(true);
+        void dial();
+      });
+      channel.on("broadcast", { event: "host-left" }, ({ payload }) => {
+        if (payload.from === selfId) return;
+        setPeerPresent(false);
+        moveTo("waiting");
+        opts.onHostGone?.("left");
+      });
 
-      await channel.subscribe();
+      // Join first, then say hello — the same rule the host follows, and for
+      // the same reason.
+      await awaitSubscribed(channel);
+      signal("guest-hello", {});
+      signal("floor", { muted: true });
       await dial();
     },
-    [roomId, selfId, signal],
+    [moveTo, roomId, selfId, signal],
   );
 
   // Memoised so consumers get a stable reference. Returning a fresh object
@@ -373,10 +525,14 @@ export function usePeerAudio(roomId: string, selfId: string) {
   return useMemo(
     () => ({
       peerState,
+      peerStateRef,
       peerPresent,
       activeSource,
       remoteMuted,
+      aegisSpeaking,
       attachAegisAudio,
+      announceAegis,
+      announceLeaving,
       setMuted,
       activeSourceRef,
       startHost,
@@ -384,6 +540,19 @@ export function usePeerAudio(roomId: string, selfId: string) {
       teardown,
       remoteStream: remoteStreamRef,
     }),
-    [peerState, peerPresent, activeSource, remoteMuted, attachAegisAudio, setMuted, startHost, startGuest, teardown],
+    [
+      peerState,
+      peerPresent,
+      activeSource,
+      remoteMuted,
+      aegisSpeaking,
+      attachAegisAudio,
+      announceAegis,
+      announceLeaving,
+      setMuted,
+      startHost,
+      startGuest,
+      teardown,
+    ],
   );
 }

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useAegisVoice } from "@/lib/useAegisVoice";
 import { createClient } from "@/lib/supabase/client";
@@ -14,7 +14,16 @@ import { ProtectionIndex } from "@/components/protection-index";
 import { ClauseHardener } from "@/components/clause-hardener";
 import { NegotiationReplay } from "@/components/negotiation-replay";
 import { PrototypeBoundary } from "@/components/prototype-boundary";
-import { Money, Panel, PrimaryButton, SectionLabel, StatusPill } from "@/components/ui";
+import { TextChannel } from "@/components/text-channel";
+import {
+  Money,
+  Panel,
+  PrimaryButton,
+  SectionLabel,
+  StatusPill,
+} from "@/components/ui";
+
+const API = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
 type RiskEvent = {
   id: string;
@@ -38,6 +47,8 @@ type Segment = {
   speaker: string;
   content: string;
   created_at: string;
+  /** Who wrote it. Null for Aegis. */
+  user_id: string | null;
 };
 
 const RISK_WEIGHT: Record<string, number> = {
@@ -89,6 +100,8 @@ export function VoiceRoom({
     connect,
     disconnect,
     injectUtterance,
+    sendTypedMessage,
+    relayPeerText,
     mode,
     peerState,
     speakers,
@@ -108,12 +121,20 @@ export function VoiceRoom({
   const [remote, setRemote] = useState<Segment[]>([]);
   const [copied, setCopied] = useState(false);
   const [linkCopied, setLinkCopied] = useState(false);
+  // Speaking is not the only way to negotiate. The channel choice is per
+  // browser, so one party can type while the other talks.
+  const [channel, setChannel] = useState<"voice" | "text">("voice");
+  const [aegisTyping, setAegisTyping] = useState(false);
+  const [chatError, setChatError] = useState<string | null>(null);
   const [terms, setTerms] = useState<DraftTerms | null>(null);
   const [challenges, setChallenges] = useState<Challenge[]>([]);
   // Seats must be live. The server renders this page once, so whoever opened
   // the room would otherwise sit on "waiting for the other party" forever —
   // the counterparty's arrival only ever lands in Postgres, never in props.
-  const [seats, setSeats] = useState<{ buyer: string | null; seller: string | null }>({
+  const [seats, setSeats] = useState<{
+    buyer: string | null;
+    seller: string | null;
+  }>({
     buyer: initialBuyerId,
     seller: initialSellerId,
   });
@@ -148,7 +169,10 @@ export function VoiceRoom({
       .then(({ data }) => {
         if (!data) return;
         setTerms(data as DraftTerms);
-        const row = data as { buyer_id: string | null; seller_id: string | null };
+        const row = data as {
+          buyer_id: string | null;
+          seller_id: string | null;
+        };
         setSeats({ buyer: row.buyer_id, seller: row.seller_id });
       });
 
@@ -166,7 +190,7 @@ export function VoiceRoom({
       .order("created_at")
       .then(({ data }) => data && setRemote(data as Segment[]));
 
-    const channel = supabase
+    const roomChannel = supabase
       .channel(`room:${roomId}`)
       .on(
         "postgres_changes",
@@ -236,7 +260,7 @@ export function VoiceRoom({
       .subscribe();
 
     return () => {
-      void supabase.removeChannel(channel);
+      void supabase.removeChannel(roomChannel);
     };
   }, [roomId]);
 
@@ -247,7 +271,8 @@ export function VoiceRoom({
       .filter((s) => !seen.has(s.content.trim()))
       .map((s) => ({
         id: s.id,
-        speaker: s.speaker === "AEGIS" ? ("AEGIS" as const) : ("PARTY" as const),
+        speaker:
+          s.speaker === "AEGIS" ? ("AEGIS" as const) : ("PARTY" as const),
         text: s.content,
         at: new Date(s.created_at).getTime(),
         // Segments are now written with the attributed party ("BUYER" /
@@ -273,10 +298,101 @@ export function VoiceRoom({
 
   const bothSeated = Boolean(seats.buyer && seats.seller);
   const counterpartyId =
-    seats.buyer === selfId ? seats.seller : seats.seller === selfId ? seats.buyer : null;
+    seats.buyer === selfId
+      ? seats.seller
+      : seats.seller === selfId
+        ? seats.buyer
+        : null;
+
+  // Read from the live seat map rather than the `role` prop: a party who took a
+  // seat after this page rendered is still an Observer as far as the prop knows.
+  const selfRole: "BUYER" | "SELLER" | null =
+    seats.buyer === selfId
+      ? "BUYER"
+      : seats.seller === selfId
+        ? "SELLER"
+        : null;
+
+  /**
+   * Send a typed line into the negotiation.
+   *
+   * If this browser is on the call, the arbitrator already in the room answers
+   * it. If it is not, the server-side arbitrator takes the turn and writes its
+   * reply to the same transcript — which is how it reaches both screens.
+   */
+  const sendChat = useCallback(
+    async (text: string) => {
+      if (!selfRole) return;
+      setChatError(null);
+
+      const handledLive = await sendTypedMessage(
+        text,
+        selfRole === "SELLER" ? "Seller" : "Buyer",
+      );
+      if (handledLive) return;
+
+      setAegisTyping(true);
+      try {
+        const supabase = createClient();
+        const {
+          data: { session },
+        } = await supabase.auth.getSession();
+        const res = await fetch(`${API}/chat/turn`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${session?.access_token ?? ""}`,
+          },
+          body: JSON.stringify({ room_id: roomId }),
+        });
+        if (!res.ok) {
+          const body = await res.json().catch(() => ({}));
+          // A 422 answers with an array of field errors, not a sentence — only
+          // a string detail is safe to put in front of a person.
+          const detail = typeof body?.detail === "string" ? body.detail : null;
+          throw new Error(
+            detail ?? `Aegis could not reply right now (${res.status}).`,
+          );
+        }
+      } catch (e) {
+        // The message itself is already in the transcript and on the other
+        // party's screen; only the arbitrator's turn failed. Say exactly that.
+        setChatError(
+          e instanceof Error
+            ? `${e.message} Your message was still delivered.`
+            : "Aegis could not reply right now. Your message was still delivered.",
+        );
+      } finally {
+        setAegisTyping(false);
+      }
+    },
+    [roomId, selfRole, sendTypedMessage],
+  );
+
+  /**
+   * Put the counterparty's typed lines in front of the live arbitrator.
+   *
+   * Only the host browser holds the Realtime connection, so when one party is
+   * on the call and the other is typing, the host is the only one that can
+   * relay. Segments seen while off the call are marked without relaying, so
+   * joining a call does not replay the entire history into it.
+   */
+  const relayed = useRef<Set<string>>(new Set());
+  const relaying = state === "live" && mode === "HOST";
+  useEffect(() => {
+    for (const segment of remote) {
+      const fresh = !relayed.current.has(segment.id);
+      relayed.current.add(segment.id);
+      if (!fresh || !relaying) continue;
+      if (segment.speaker === "AEGIS" || segment.user_id === selfId) continue;
+      relayPeerText(segment.speaker, segment.content);
+    }
+  }, [remote, relaying, relayPeerText, selfId]);
 
   const inviteUrl =
-    typeof window !== "undefined" ? `${window.location.origin}/room/${code}` : "";
+    typeof window !== "undefined"
+      ? `${window.location.origin}/room/${code}`
+      : "";
 
   async function copyInvite() {
     await navigator.clipboard.writeText(inviteUrl);
@@ -310,7 +426,9 @@ export function VoiceRoom({
               >
                 <span
                   className={`h-1.5 w-1.5 rounded-full ${
-                    live ? "animate-pulse-dot bg-current" : "bg-[var(--color-ink-faint)]"
+                    live
+                      ? "animate-pulse-dot bg-current"
+                      : "bg-[var(--color-ink-faint)]"
                   }`}
                 />
                 {live
@@ -331,16 +449,24 @@ export function VoiceRoom({
                 </span>
               )}
               {peerState === "connected" && (
-                <span className="text-[var(--color-signal)]">· Peer audio connected</span>
+                <span className="text-[var(--color-signal)]">
+                  · Peer audio connected
+                </span>
               )}
               {peerState === "waiting" && (
-                <span className="text-[var(--color-ink-faint)]">· Waiting for peer audio</span>
+                <span className="text-[var(--color-ink-faint)]">
+                  · Waiting for peer audio
+                </span>
               )}
               {peerState === "connecting" && (
-                <span className="text-[var(--color-ink-faint)]">· Connecting peer audio</span>
+                <span className="text-[var(--color-ink-faint)]">
+                  · Connecting peer audio
+                </span>
               )}
               {peerState === "failed" && (
-                <span className="text-[var(--color-caution)]">· Peer audio needs attention</span>
+                <span className="text-[var(--color-caution)]">
+                  · Peer audio needs attention
+                </span>
               )}
             </div>
             <div className="mt-3 flex flex-wrap items-center gap-2">
@@ -453,170 +579,265 @@ export function VoiceRoom({
         </div>
       )}
 
-      {!live && !contract && (
-        <DealBrief title={title} role={role} />
-      )}
+      {!live && !contract && <DealBrief title={title} role={role} />}
 
       <div className="mt-5 grid items-start gap-5 lg:grid-cols-[minmax(0,1fr)_360px] xl:grid-cols-[minmax(0,1fr)_390px]">
         {/* ================= left: the call ================= */}
         <div className="min-w-0 space-y-5">
-          <Panel className="flex min-h-[390px] flex-col items-center justify-center px-6 py-10 sm:min-h-[430px]">
-            {/* the orb */}
-            <div className="relative flex h-32 w-32 items-center justify-center">
-              <div
-                className="absolute inset-0 rounded-full transition-transform duration-100"
-                style={{
-                  background:
-                    "radial-gradient(circle, color-mix(in oklab, var(--color-aegis) 40%, transparent), transparent 70%)",
-                  transform: `scale(${live ? 1 + level * 0.55 : 0.8})`,
-                  opacity: live ? 0.85 : 0.25,
-                }}
-              />
-              <div
-                className={`relative flex h-20 w-20 items-center justify-center rounded-full border-2 transition-colors ${
-                  speaking
-                    ? "border-[var(--color-aegis)] bg-[var(--color-aegis)]/20"
-                    : "border-[var(--color-line-bright)] bg-[var(--color-panel-2)]"
-                }`}
-              >
-                {/* Bars are driven by the measured mic level, which updates on
-                    every animation frame. Fixed per-bar weights keep the shape
-                    organic without needing a clock. */}
-                <div className="flex h-10 items-center gap-1">
-                  {[0.55, 1, 0.75, 0.35].map((weight, i) => (
-                    <span
-                      key={i}
-                      className="w-1 rounded-full bg-[var(--color-aegis)] transition-[height] duration-100"
-                      style={{
-                        height: live
-                          ? `${8 + level * weight * 26 + (speaking ? 8 * weight : 0)}px`
-                          : "8px",
-                        opacity: live ? 1 : 0.3,
-                      }}
-                    />
-                  ))}
-                </div>
+          {/* Voice is the default, not the requirement. Either channel writes
+              to the same transcript and gets the same arbitrator. */}
+          <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-[var(--color-line)] bg-[var(--color-panel)] p-2 pl-4">
+            <p className="text-[13px] leading-relaxed text-[var(--color-ink-dim)]">
+              {channel === "voice"
+                ? "Speak with the other party — Aegis chairs the call."
+                : "Prefer not to speak? Type instead — Aegis chairs it the same way."}
+            </p>
+            <div
+              role="tablist"
+              aria-label="Negotiation channel"
+              className="flex shrink-0 items-center gap-1 rounded-lg border border-[var(--color-line-bright)] bg-[var(--color-void)] p-1"
+            >
+              {(
+                [
+                  ["voice", "Voice call"],
+                  ["text", "Text chat"],
+                ] as const
+              ).map(([key, label]) => (
+                <button
+                  key={key}
+                  role="tab"
+                  aria-selected={channel === key}
+                  onClick={() => setChannel(key)}
+                  className={`rounded-md px-3 py-1.5 text-[13px] font-semibold transition-colors ${
+                    channel === key
+                      ? "bg-[var(--color-aegis)]/15 text-[var(--color-aegis)]"
+                      : "text-[var(--color-ink-dim)] hover:text-[var(--color-ink)]"
+                  }`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* The call controls follow you into the text channel, so switching
+              tabs can never strand a live session with no way to end it. */}
+          {channel === "text" && live && (
+            <div className="animate-rise flex flex-wrap items-center justify-between gap-3 rounded-xl border border-[var(--color-aegis)]/35 bg-[var(--color-aegis)]/10 px-4 py-3">
+              <p className="text-[13px] text-[var(--color-ink)]">
+                <span className="animate-pulse-dot mr-2 inline-block h-1.5 w-1.5 rounded-full bg-[var(--color-aegis)] align-middle" />
+                Voice session live ·{" "}
+                {muted ? "your mic is muted" : "you have the floor"}
+              </p>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={toggleMic}
+                  className="rounded-lg border border-[var(--color-line-bright)] bg-[var(--color-panel-2)] px-3 py-1.5 text-[13px] font-semibold text-[var(--color-ink)] transition-colors hover:bg-[var(--color-panel-raised)]"
+                >
+                  {muted ? "Unmute" : "Mute"}
+                </button>
+                <button
+                  onClick={disconnect}
+                  className="rounded-lg border border-[var(--color-halt)]/50 bg-[var(--color-halt)]/10 px-3 py-1.5 text-[13px] font-semibold text-[var(--color-halt)] transition-colors hover:bg-[var(--color-halt)]/20"
+                >
+                  End session
+                </button>
               </div>
             </div>
+          )}
 
-            {live && mode === "HOST" && activeSource && (
-              <p className="animate-rise mt-4 text-[13px] font-medium text-[var(--color-aegis)]">
-                {activeSource === "BOTH"
-                  ? "Both parties speaking at once"
-                  : `${
-                      activeSource === "LOCAL"
-                        ? role === "Seller"
-                          ? "Seller"
-                          : "Buyer"
-                        : role === "Seller"
-                          ? "Buyer"
-                          : "Seller"
-                    } has the floor`}
-              </p>
-            )}
-
-            <p className="mt-6 text-[15px] font-medium">
-              {state === "idle" && "Aegis is ready"}
-              {state === "connecting" && "Connecting to the arbitrator…"}
-              {live && (speaking ? "Aegis is speaking" : "Aegis is listening")}
-              {state === "closed" && "Session ended"}
-              {state === "error" && "Connection problem"}
-            </p>
-            <p className="mt-1.5 max-w-sm text-center text-[13px] leading-relaxed text-[var(--color-ink-dim)]">
-              {live
-                ? "Both parties speak into this device. State the item, the price, and what counts as done."
-                : "Aegis joins as a neutral third party, drafts the contract from what it hears, and holds the funds."}
-            </p>
-
-            {error && (
-              <p className="mt-4 rounded-lg border border-[var(--color-halt)]/40 bg-[var(--color-halt)]/10 px-3 py-2 text-[13px] text-[var(--color-halt)]">
-                {error}
-              </p>
-            )}
-
-            <div className="mt-6">
-              {live ? (
-                <div className="flex flex-col items-center gap-3">
-                  <button
-                    onClick={toggleMic}
-                    className={`flex items-center gap-2.5 rounded-full border-2 px-6 py-3 text-[15px] font-semibold transition-colors ${
-                      muted
-                        ? "border-[var(--color-line-bright)] bg-[var(--color-panel-2)] text-[var(--color-ink-dim)]"
-                        : "border-[var(--color-aegis)] bg-[var(--color-aegis)]/15 text-[var(--color-aegis)]"
+          {channel === "text" ? (
+            <TextChannel
+              feed={feed}
+              selfRole={selfRole}
+              onSend={sendChat}
+              thinking={aegisTyping}
+              error={chatError}
+              liveVoice={live}
+              bothSeated={bothSeated}
+            />
+          ) : (
+            <>
+              <Panel className="flex min-h-[390px] flex-col items-center justify-center px-6 py-10 sm:min-h-[430px]">
+                {/* the orb */}
+                <div className="relative flex h-32 w-32 items-center justify-center">
+                  <div
+                    className="absolute inset-0 rounded-full transition-transform duration-100"
+                    style={{
+                      background:
+                        "radial-gradient(circle, color-mix(in oklab, var(--color-aegis) 40%, transparent), transparent 70%)",
+                      transform: `scale(${live ? 1 + level * 0.55 : 0.8})`,
+                      opacity: live ? 0.85 : 0.25,
+                    }}
+                  />
+                  <div
+                    className={`relative flex h-20 w-20 items-center justify-center rounded-full border-2 transition-colors ${
+                      speaking
+                        ? "border-[var(--color-aegis)] bg-[var(--color-aegis)]/20"
+                        : "border-[var(--color-line-bright)] bg-[var(--color-panel-2)]"
                     }`}
                   >
-                    <span
-                      className={`h-2.5 w-2.5 rounded-full ${
-                        muted ? "bg-current" : "animate-pulse-dot bg-current"
-                      }`}
-                    />
-                    {muted ? "Unmute to speak" : "You have the floor"}
-                  </button>
-
-                  <p className="text-[12px] text-[var(--color-ink-faint)]">
-                    {muted
-                      ? "Aegis can be heard by both parties. Unmute when it is your turn."
-                      : "Mute when you finish so the other party can answer."}
-                    {!remoteMuted && muted && " · The other party is speaking."}
-                  </p>
-
-                  <button
-                    onClick={disconnect}
-                  className="rounded-lg border border-[var(--color-halt)]/50 bg-[var(--color-halt)]/10 px-5 py-2.5 text-[15px] font-semibold text-[var(--color-halt)] transition-colors hover:bg-[var(--color-halt)]/20"
-                  >
-                    End session
-                  </button>
-                </div>
-              ) : (
-                <PrimaryButton
-                  onClick={connect}
-                  disabled={state === "connecting"}
-                  className="px-6"
-                >
-                  {state === "connecting" ? "Connecting…" : "Start negotiation"}
-                </PrimaryButton>
-              )}
-            </div>
-          </Panel>
-
-          {/* transcript */}
-          <Panel className="min-h-[230px] p-5">
-            <div className="flex items-center justify-between gap-3">
-              <SectionLabel>Live transcript</SectionLabel>
-              <span className="tnum text-[11px] text-[var(--color-ink-faint)]">
-                {feed.length ? `${feed.length} events` : "Awaiting audio"}
-              </span>
-            </div>
-            <div
-              ref={feedRef}
-              className="mt-4 max-h-80 space-y-3 overflow-y-auto border-t border-[var(--color-line)] pt-3 pr-1"
-            >
-              {feed.length === 0 ? (
-                <p className="py-8 text-center text-[14px] text-[var(--color-ink-faint)]">
-                  Nothing spoken yet.
-                </p>
-              ) : (
-                feed.map((u) => (
-                  <div key={u.id} className="animate-rise flex gap-3">
-                    <span
-                      className={`mt-0.5 shrink-0 rounded px-1.5 py-0.5 text-[10px] font-semibold tracking-wider ${
-                        u.speaker === "AEGIS"
-                          ? "bg-[var(--color-aegis)]/15 text-[var(--color-aegis)]"
-                          : "bg-[var(--color-line)] text-[var(--color-ink-dim)]"
-                      }`}
-                    >
-                      {u.speaker === "AEGIS"
-                        ? "AEGIS"
-                        : (u.label ?? "PARTY").toUpperCase()}
-                    </span>
-                    <p className="text-[14px] leading-relaxed text-[var(--color-ink)]">
-                      {u.text}
-                    </p>
+                    {/* Bars are driven by the measured mic level, which updates on
+                    every animation frame. Fixed per-bar weights keep the shape
+                    organic without needing a clock. */}
+                    <div className="flex h-10 items-center gap-1">
+                      {[0.55, 1, 0.75, 0.35].map((weight, i) => (
+                        <span
+                          key={i}
+                          className="w-1 rounded-full bg-[var(--color-aegis)] transition-[height] duration-100"
+                          style={{
+                            height: live
+                              ? `${8 + level * weight * 26 + (speaking ? 8 * weight : 0)}px`
+                              : "8px",
+                            opacity: live ? 1 : 0.3,
+                          }}
+                        />
+                      ))}
+                    </div>
                   </div>
-                ))
-              )}
-            </div>
-          </Panel>
+                </div>
+
+                {live && mode === "HOST" && activeSource && (
+                  <p className="animate-rise mt-4 text-[13px] font-medium text-[var(--color-aegis)]">
+                    {activeSource === "BOTH"
+                      ? "Both parties speaking at once"
+                      : `${
+                          activeSource === "LOCAL"
+                            ? role === "Seller"
+                              ? "Seller"
+                              : "Buyer"
+                            : role === "Seller"
+                              ? "Buyer"
+                              : "Seller"
+                        } has the floor`}
+                  </p>
+                )}
+
+                <p className="mt-6 text-[15px] font-medium">
+                  {state === "idle" && "Aegis is ready"}
+                  {state === "connecting" && "Connecting to the arbitrator…"}
+                  {live &&
+                    (speaking ? "Aegis is speaking" : "Aegis is listening")}
+                  {state === "closed" && "Session ended"}
+                  {state === "error" && "Connection problem"}
+                </p>
+                <p className="mt-1.5 max-w-sm text-center text-[13px] leading-relaxed text-[var(--color-ink-dim)]">
+                  {live
+                    ? "Both parties speak into this device. State the item, the price, and what counts as done."
+                    : "Aegis joins as a neutral third party, drafts the contract from what it hears, and holds the funds."}
+                </p>
+
+                {error && (
+                  <div className="mt-4 max-w-sm rounded-lg border border-[var(--color-halt)]/40 bg-[var(--color-halt)]/10 px-3 py-2 text-center">
+                    <p className="text-[13px] leading-relaxed text-[var(--color-halt)]">
+                      {error}
+                    </p>
+                    {/* Direct audio between two networks is the one thing this
+                        page cannot guarantee. When it fails there is a working
+                        way to negotiate one click away — offer it rather than
+                        leaving the party staring at an apology. */}
+                    {peerState === "failed" && (
+                      <button
+                        onClick={() => setChannel("text")}
+                        className="mt-2.5 rounded-lg border border-[var(--color-aegis)]/50 bg-[var(--color-aegis)]/10 px-3.5 py-1.5 text-[13px] font-semibold text-[var(--color-aegis)] transition-colors hover:bg-[var(--color-aegis)]/20"
+                      >
+                        Switch to Text chat
+                      </button>
+                    )}
+                  </div>
+                )}
+
+                <div className="mt-6">
+                  {live ? (
+                    <div className="flex flex-col items-center gap-3">
+                      <button
+                        onClick={toggleMic}
+                        className={`flex items-center gap-2.5 rounded-full border-2 px-6 py-3 text-[15px] font-semibold transition-colors ${
+                          muted
+                            ? "border-[var(--color-line-bright)] bg-[var(--color-panel-2)] text-[var(--color-ink-dim)]"
+                            : "border-[var(--color-aegis)] bg-[var(--color-aegis)]/15 text-[var(--color-aegis)]"
+                        }`}
+                      >
+                        <span
+                          className={`h-2.5 w-2.5 rounded-full ${
+                            muted
+                              ? "bg-current"
+                              : "animate-pulse-dot bg-current"
+                          }`}
+                        />
+                        {muted ? "Unmute to speak" : "You have the floor"}
+                      </button>
+
+                      <p className="text-[12px] text-[var(--color-ink-faint)]">
+                        {muted
+                          ? "Aegis can be heard by both parties. Unmute when it is your turn."
+                          : "Mute when you finish so the other party can answer."}
+                        {!remoteMuted &&
+                          muted &&
+                          " · The other party is speaking."}
+                      </p>
+
+                      <button
+                        onClick={disconnect}
+                        className="rounded-lg border border-[var(--color-halt)]/50 bg-[var(--color-halt)]/10 px-5 py-2.5 text-[15px] font-semibold text-[var(--color-halt)] transition-colors hover:bg-[var(--color-halt)]/20"
+                      >
+                        End session
+                      </button>
+                    </div>
+                  ) : (
+                    <PrimaryButton
+                      onClick={connect}
+                      disabled={state === "connecting"}
+                      className="px-6"
+                    >
+                      {state === "connecting"
+                        ? "Connecting…"
+                        : "Start negotiation"}
+                    </PrimaryButton>
+                  )}
+                </div>
+              </Panel>
+
+              {/* transcript */}
+              <Panel className="min-h-[230px] p-5">
+                <div className="flex items-center justify-between gap-3">
+                  <SectionLabel>Live transcript</SectionLabel>
+                  <span className="tnum text-[11px] text-[var(--color-ink-faint)]">
+                    {feed.length ? `${feed.length} events` : "Awaiting audio"}
+                  </span>
+                </div>
+                <div
+                  ref={feedRef}
+                  className="mt-4 max-h-80 space-y-3 overflow-y-auto border-t border-[var(--color-line)] pt-3 pr-1"
+                >
+                  {feed.length === 0 ? (
+                    <p className="py-8 text-center text-[14px] text-[var(--color-ink-faint)]">
+                      Nothing spoken yet.
+                    </p>
+                  ) : (
+                    feed.map((u) => (
+                      <div key={u.id} className="animate-rise flex gap-3">
+                        <span
+                          className={`mt-0.5 shrink-0 rounded px-1.5 py-0.5 text-[10px] font-semibold tracking-wider ${
+                            u.speaker === "AEGIS"
+                              ? "bg-[var(--color-aegis)]/15 text-[var(--color-aegis)]"
+                              : "bg-[var(--color-line)] text-[var(--color-ink-dim)]"
+                          }`}
+                        >
+                          {u.speaker === "AEGIS"
+                            ? "AEGIS"
+                            : (u.label ?? "PARTY").toUpperCase()}
+                        </span>
+                        <p className="text-[14px] leading-relaxed text-[var(--color-ink)]">
+                          {u.text}
+                        </p>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </Panel>
+            </>
+          )}
 
           <NegotiationReplay feed={feed} risks={risks} />
         </div>

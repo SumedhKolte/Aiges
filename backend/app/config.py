@@ -23,6 +23,9 @@ class Settings(BaseSettings):
     # the client speaker segments it can attribute to the Buyer or Seller.
     openai_transcription_model: str = "gpt-4o-transcribe-diarize"
     openai_realtime_voice: str = "ash"
+    # The arbitrator when the parties type instead of speaking. Same prompt and
+    # same tools as the realtime agent, reached over Chat Completions.
+    openai_chat_model: str = "gpt-4o"
     openai_vision_model: str = "gpt-4o"
     openai_jury_model: str = "gpt-4o"
     openai_reel_model: str = "gpt-4o-mini"

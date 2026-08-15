@@ -12,7 +12,11 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createClient } from "./supabase/client";
 import { usePeerAudio } from "./usePeerAudio";
-import { analyseSpeakers, estimatePitch, type SpeakerReading } from "./voice-print";
+import {
+  analyseSpeakers,
+  estimatePitch,
+  type SpeakerReading,
+} from "./voice-print";
 
 const API = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
@@ -32,6 +36,13 @@ export type Utterance = {
   /** Resolved party name when the floor monitor could attribute it. */
   label?: string;
 };
+
+/** How long a guest waits for the seat holder to answer before taking over. */
+const HOST_ANSWER_TIMEOUT_MS = 8000;
+// A host that crashed still holds its lease until the server calls it stale,
+// so keep asking across that window rather than giving up on the first no.
+const TAKEOVER_ATTEMPTS = 12;
+const TAKEOVER_RETRY_MS = 8000;
 
 /** Tool calls the browser enriches before relaying to the backend. */
 const ROOM_SCOPED = new Set([
@@ -88,6 +99,10 @@ export function useAegisVoice(
   const measuredLatency = useRef<number | null>(null);
   const heldSeat = useRef(false);
   const heartbeatRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  // Guest-side recovery when the seat holder stops answering.
+  const hostWatchdogRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const takingOver = useRef(false);
+  const mountedRef = useRef(true);
 
   /** Fire-and-forget authed POST used by the seat lease. */
   const seatCall = useCallback(
@@ -104,7 +119,7 @@ export function useAegisVoice(
           Authorization: `Bearer ${session?.access_token ?? ""}`,
         },
         body: JSON.stringify({ room_id: roomId }),
-      }).catch(() => {});
+      }).catch(() => { });
     },
     [roomId],
   );
@@ -135,7 +150,11 @@ export function useAegisVoice(
         return;
       }
       responseActive.current = true;
-      send(response ? { type: "response.create", response } : { type: "response.create" });
+      send(
+        response
+          ? { type: "response.create", response }
+          : { type: "response.create" },
+      );
     },
     [send],
   );
@@ -150,7 +169,10 @@ export function useAegisVoice(
 
       const body: Record<string, unknown> = { ...args };
       if (ROOM_SCOPED.has(name)) body.room_id = roomId;
-      if (name === "verify_vocal_challenge" && measuredLatency.current != null) {
+      if (
+        name === "verify_vocal_challenge" &&
+        measuredLatency.current != null
+      ) {
         body.latency_ms = measuredLatency.current;
       }
 
@@ -230,7 +252,7 @@ export function useAegisVoice(
 
   const onServerEvent = useCallback(
     (raw: MessageEvent) => {
-      let evt: { type?: string; [k: string]: unknown };
+      let evt: { type?: string;[k: string]: unknown };
       try {
         evt = JSON.parse(raw.data);
       } catch {
@@ -302,13 +324,17 @@ export function useAegisVoice(
           break;
         case "output_audio_buffer.started":
           setSpeaking(true);
+          // The guest has no data channel and cannot see this for itself.
+          peer.announceAegis(true);
           break;
         case "output_audio_buffer.stopped":
           setSpeaking(false);
+          peer.announceAegis(false);
           aegisFinishedAt.current = performance.now();
           break;
         case "response.done": {
           setSpeaking(false);
+          peer.announceAegis(false);
           aegisFinishedAt.current = performance.now();
           responseActive.current = false;
           // flush anything that arrived while the model was mid-turn
@@ -374,7 +400,10 @@ export function useAegisVoice(
       // animation frame re-rendered the whole room sixty times a second, which
       // is wasted work at best and amplifies any render-keyed effect at worst.
       const next = Math.min(1, peak / 60);
-      if (Math.abs(next - lastLevel) > 0.04 || (next === 0) !== (lastLevel === 0)) {
+      if (
+        Math.abs(next - lastLevel) > 0.04 ||
+        (next === 0) !== (lastLevel === 0)
+      ) {
         lastLevel = next;
         setLevel(next);
       }
@@ -398,23 +427,10 @@ export function useAegisVoice(
     return ctx;
   }, []);
 
-  // --- connect --------------------------------------------------------------
-  const connect = useCallback(async () => {
-    if (state === "connecting" || state === "live") return;
-    setState("connecting");
-    setError(null);
-
-    try {
-      const supabase = createClient();
-      const {
-        data: { session },
-      } = await supabase.auth.getSession();
-      const token = session?.access_token;
-      if (!token) throw new Error("Your session expired. Please sign in again.");
-
-      // Exactly one arbitrator per room. Without this lock, each browser spawns
-      // its own agent and the two talk over each other in the same negotiation.
-      const seatRes = await fetch(`${API}/realtime/seat/claim`, {
+  /** Ask for the arbitrator seat. */
+  const claimSeat = useCallback(
+    async (token: string) => {
+      const res = await fetch(`${API}/realtime/seat/claim`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -422,28 +438,15 @@ export function useAegisVoice(
         },
         body: JSON.stringify({ room_id: roomId }),
       });
-      const seat = await seatRes.json().catch(() => ({}));
+      const seat = await res.json().catch(() => ({}));
+      return Boolean(res.ok && seat.granted);
+    },
+    [roomId],
+  );
 
-      // --- GUEST path -------------------------------------------------------
-      // The seat is taken, so we do not open our own Realtime session (that is
-      // what made two agents talk over each other). Instead our microphone is
-      // bridged peer-to-peer to the host, who mixes it into what Aegis hears.
-      if (!seatRes.ok || !seat.granted) {
-        const mic = await navigator.mediaDevices.getUserMedia({
-          audio: {
-            echoCancellation: true,
-            noiseSuppression: true,
-            autoGainControl: true,
-          },
-        });
-        streamRef.current = mic;
-        startMeter(mic);
-        await peer.startGuest(mic);
-        setMode("GUEST");
-        setState("live");
-        return;
-      }
-
+  // --- host: hold the seat and run the Realtime session ---------------------
+  const beginHost = useCallback(
+    async (token: string) => {
       heldSeat.current = true;
       setMode("HOST");
 
@@ -453,7 +456,8 @@ export function useAegisVoice(
           headers: { Authorization: `Bearer ${token}` },
         },
       );
-      if (!configRes.ok) throw new Error("Could not load the arbitrator configuration.");
+      if (!configRes.ok)
+        throw new Error("Could not load the arbitrator configuration.");
       const config = await configRes.json();
 
       const stream = await navigator.mediaDevices.getUserMedia({
@@ -498,7 +502,10 @@ export function useAegisVoice(
         send({ type: "session.update", session: config });
         setState("live");
         // Keep the lease warm so a live session is never reclaimed as stale.
-        heartbeatRef.current = setInterval(() => void seatCall("heartbeat"), 30_000);
+        heartbeatRef.current = setInterval(
+          () => void seatCall("heartbeat"),
+          30_000,
+        );
         createResponse({
           instructions:
             "Open the negotiation. In one sentence: you are Aegis, you hold " +
@@ -540,11 +547,140 @@ export function useAegisVoice(
         type: "answer",
         sdp: await sdpRes.text(),
       });
+    },
+    [
+      createResponse,
+      onServerEvent,
+      peer,
+      peerLabel,
+      roomId,
+      seatCall,
+      selfLabel,
+      send,
+      startMeter,
+    ],
+  );
+
+  // Guest recovery reaches back into the host path, so it is held in a ref to
+  // keep the two callbacks from depending on each other.
+  const beginHostRef = useRef(beginHost);
+  beginHostRef.current = beginHost;
+
+  // --- guest: bridge our microphone through whoever holds the seat ----------
+  const beginGuest = useCallback(
+    async (token: string) => {
+      const mic = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true,
+        },
+      });
+      streamRef.current = mic;
+      startMeter(mic);
+
+      /**
+       * The host is gone — it ended the session, closed the tab, or dropped.
+       *
+       * Without this the guest sits in a room with no arbitrator in it,
+       * unmuting into a connection nobody is on the other end of. The seat is
+       * only released cleanly on a graceful exit, so a crashed host leaves it
+       * held until the lease goes stale; we keep asking until it is ours.
+       */
+      const takeOver = async (reason: "left" | "silent" | "unreachable") => {
+        if (takingOver.current || heldSeat.current) return;
+        takingOver.current = true;
+        // A host that went away will free its lease, in a moment or when the
+        // server calls it stale — worth waiting out. A peer-to-peer connection
+        // that cannot be established is not going to fix itself, so ask once
+        // and then say plainly what happened.
+        const attempts = reason === "unreachable" ? 1 : TAKEOVER_ATTEMPTS;
+        try {
+          for (let attempt = 0; attempt < attempts; attempt++) {
+            if (!mountedRef.current) return;
+            // The bridge came up while we were waiting — a slow rendezvous,
+            // not an absent host. Leave the working session alone.
+            if (peer.peerStateRef.current === "connected") return;
+            if (await claimSeat(token)) {
+              setState("connecting");
+              peer.teardown();
+              streamRef.current?.getTracks().forEach((t) => t.stop());
+              streamRef.current = null;
+              await beginHostRef.current(token);
+              return;
+            }
+            if (attempt < attempts - 1) {
+              await new Promise((r) => setTimeout(r, TAKEOVER_RETRY_MS));
+            }
+          }
+          if (!mountedRef.current || peer.peerStateRef.current === "connected")
+            return;
+          setState("error");
+          setError(
+            reason === "unreachable"
+              ? "Your network will not carry a direct audio connection to the " +
+              "other party. Switch to Text chat, or have the other party " +
+              "end their session so this browser can host it."
+              : "The party hosting the arbitrator stopped responding, and the " +
+              "seat is still held. Reload to try again, or use Text chat.",
+          );
+        } catch (e) {
+          setState("error");
+          setError(
+            e instanceof Error ? e.message : "Could not take over the session.",
+          );
+        } finally {
+          takingOver.current = false;
+        }
+      };
+
+      await peer.startGuest(mic, {
+        onHostGone: (reason) => void takeOver(reason),
+      });
+      setMode("GUEST");
+      setState("live");
+
+      // Nobody answered our hello. Either the seat holder left without
+      // releasing it or peer-to-peer audio cannot be established between these
+      // two networks — in both cases sitting here silently is the worst
+      // outcome, so go and try to host it ourselves.
+      hostWatchdogRef.current = setTimeout(() => {
+        if (peer.peerStateRef.current !== "connected") void takeOver("silent");
+      }, HOST_ANSWER_TIMEOUT_MS);
+    },
+    [claimSeat, peer, startMeter],
+  );
+
+  // --- connect --------------------------------------------------------------
+  const connect = useCallback(async () => {
+    if (state === "connecting" || state === "live") return;
+    setState("connecting");
+    setError(null);
+
+    try {
+      const supabase = createClient();
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+      const token = session?.access_token;
+      if (!token)
+        throw new Error("Your session expired. Please sign in again.");
+
+      // Exactly one arbitrator per room. Without this lock, each browser spawns
+      // its own agent and the two talk over each other in the same negotiation.
+      // The seat is taken -> we do not open our own Realtime session; our
+      // microphone is bridged peer-to-peer to the host, who mixes it into what
+      // Aegis hears.
+      if (await claimSeat(token)) {
+        await beginHost(token);
+      } else {
+        await beginGuest(token);
+      }
     } catch (e) {
       setState("error");
       setError(e instanceof Error ? e.message : "Could not start the session.");
     }
-  }, [createResponse, onServerEvent, peer, roomId, seatCall, send, startMeter, state]);
+  }, [beginGuest, beginHost, claimSeat, state]);
 
   /**
    * Inject a line into the negotiation as if a party had spoken it.
@@ -570,6 +706,78 @@ export function useAegisVoice(
       createResponse();
     },
     [createResponse, persist, push, send, state],
+  );
+
+  /**
+   * Say something by typing it instead of speaking it.
+   *
+   * The line is written to the shared transcript either way — that is what puts
+   * it on the counterparty's screen and into the audit trail. What differs is
+   * who answers: if a Realtime session is up in this browser, the message is
+   * handed to the arbitrator already in the room so it replies in the call.
+   * Otherwise nothing here can answer, and the caller asks the server-side
+   * arbitrator to take the turn.
+   *
+   * Returns true when a live session has taken responsibility for replying.
+   */
+  const sendTypedMessage = useCallback(
+    async (text: string, label = selfLabel) => {
+      const line = text.trim();
+      if (!line) return false;
+
+      push({ speaker: "PARTY", text: line, label });
+      await persist(label.toUpperCase(), line);
+
+      // A guest holds no data channel; the host's browser relays typed lines
+      // into the session on its behalf (see relayPeerText).
+      if (state === "live" && mode === "HOST") {
+        send({
+          type: "conversation.item.create",
+          item: {
+            type: "message",
+            role: "user",
+            content: [
+              {
+                type: "input_text",
+                text: `[${label} typed rather than spoke]: ${line}`,
+              },
+            ],
+          },
+        });
+        createResponse();
+      }
+      return state === "live";
+    },
+    [createResponse, mode, persist, push, selfLabel, send, state],
+  );
+
+  /**
+   * Feed a line the counterparty typed into the live session.
+   *
+   * Only the host is connected to the arbitrator, so when the other party types
+   * while the host is on the call, the host is the only one who can put those
+   * words in front of Aegis. Without this the typed side of a mixed room is
+   * visible to humans and invisible to the arbitrator.
+   */
+  const relayPeerText = useCallback(
+    (label: string, text: string) => {
+      if (state !== "live" || mode !== "HOST" || !text.trim()) return;
+      send({
+        type: "conversation.item.create",
+        item: {
+          type: "message",
+          role: "user",
+          content: [
+            {
+              type: "input_text",
+              text: `[${label} typed rather than spoke]: ${text.trim()}`,
+            },
+          ],
+        },
+      });
+      createResponse();
+    },
+    [createResponse, mode, send, state],
   );
 
   /**
@@ -607,7 +815,7 @@ export function useAegisVoice(
             text:
               src === "BOTH"
                 ? "[Floor: both parties are speaking at once. Ask them to " +
-                  "answer one at a time, naming who you want to hear from.]"
+                "answer one at a time, naming who you want to hear from.]"
                 : `[Floor: ${who}. Attribute the speech that follows to them.]`,
           },
         ],
@@ -616,6 +824,42 @@ export function useAegisVoice(
     // Deliberately no response.create — this is context, not a turn. Prompting
     // a reply on every change of speaker would make Aegis interrupt constantly.
   }, [peer.activeSource, state, mode, selfLabel, peerLabel, send]);
+
+  /**
+   * Tell Aegis the second party has arrived.
+   *
+   * The opening brief says the counterparty is muted and cannot answer, which
+   * is true at the time. Nothing ever corrected it: the guest could join, sit
+   * there, and Aegis would keep addressing the host alone until the guest
+   * happened to speak. A negotiation with two people in it has to know when
+   * the second one walked in.
+   */
+  const announcedJoin = useRef(false);
+  useEffect(() => {
+    if (state !== "live" || mode !== "HOST") return;
+    if (peer.peerState !== "connected" || announcedJoin.current) return;
+    announcedJoin.current = true;
+
+    send({
+      type: "conversation.item.create",
+      item: {
+        type: "message",
+        role: "user",
+        content: [
+          {
+            type: "input_text",
+            text:
+              `[The ${peerLabel} has just joined the room. They can hear you ` +
+              `now and they can speak once they unmute. Greet the ${peerLabel} ` +
+              `by name, summarise in one sentence what the ${selfLabel} has ` +
+              `said so far, and ask the ${peerLabel} to unmute and give their ` +
+              `side of the deal.]`,
+          },
+        ],
+      },
+    });
+    createResponse();
+  }, [peer.peerState, state, mode, peerLabel, selfLabel, send, createResponse]);
 
   /**
    * Take or release the floor.
@@ -657,8 +901,15 @@ export function useAegisVoice(
       clearInterval(heartbeatRef.current);
       heartbeatRef.current = null;
     }
+    if (hostWatchdogRef.current) {
+      clearTimeout(hostWatchdogRef.current);
+      hostWatchdogRef.current = null;
+    }
     if (heldSeat.current) {
       heldSeat.current = false;
+      // Say so before the socket goes, so the other party can take the seat
+      // now rather than waiting out a ninety-second stale lease.
+      peer.announceLeaving();
       void seatCall("release");
     }
     peer.teardown();
@@ -676,6 +927,8 @@ export function useAegisVoice(
     responseActive.current = false;
     pendingResponse.current = null;
     aegisStreamRef.current = null;
+    announcedJoin.current = false;
+    lastAnnounced.current = null;
     setMode(null);
     setState("closed");
   }, [peer, seatCall]);
@@ -691,18 +944,30 @@ export function useAegisVoice(
   // mounted for the component's whole life.
   const disconnectRef = useRef(disconnect);
   disconnectRef.current = disconnect;
-  useEffect(() => () => disconnectRef.current(), []);
+  useEffect(
+    () => () => {
+      mountedRef.current = false;
+      disconnectRef.current();
+    },
+    [],
+  );
 
   return {
     state,
     error,
     utterances,
-    speaking,
+    // A guest is not connected to Aegis directly and can only know that it is
+    // talking because the host says so. Reporting the host's own (always
+    // false) speaking state there would tell the guest it is their turn while
+    // the arbitrator is mid-sentence.
+    speaking: mode === "GUEST" ? peer.aegisSpeaking : speaking,
     level,
     challengePhrase,
     connect,
     disconnect,
     injectUtterance,
+    sendTypedMessage,
+    relayPeerText,
     mode,
     speakers,
     muted,

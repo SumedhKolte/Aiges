@@ -10,7 +10,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from .config import get_settings
-from .routers import audit, guardian, jury, realtime, reels, rooms, tools, vision
+from .routers import audit, chat, guardian, jury, realtime, reels, rooms, tools, vision
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s  %(message)s")
 log = logging.getLogger("aegis")
@@ -40,6 +40,7 @@ log.info("CORS exact origins : %s", settings.cors_origin_list or "(none)")
 log.info("CORS origin regex  : %s", settings.cors_origin_regex or "(disabled)")
 
 app.include_router(realtime.router)
+app.include_router(chat.router)
 app.include_router(tools.router)
 app.include_router(vision.router)
 app.include_router(jury.router)

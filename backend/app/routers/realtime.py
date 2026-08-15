@@ -7,9 +7,10 @@ from pydantic import BaseModel
 
 from ..config import get_settings
 from ..deps import CurrentUser, current_user
-from ..prompts import AEGIS_SYSTEM_PROMPT, AEGIS_TOOLS, room_context
+from ..prompts import AEGIS_TOOLS
+from ..services.arbitrator import room_instructions
 from ..services.openai_client import realtime_sdp_exchange
-from ..supabase_client import NO_ROW, admin
+from ..supabase_client import admin
 
 router = APIRouter(prefix="/realtime", tags=["realtime"])
 
@@ -29,45 +30,7 @@ async def session_config(
     just replies to whoever spoke last.
     """
     settings = get_settings()
-
-    instructions = AEGIS_SYSTEM_PROMPT
-    if room_id:
-        db = admin()
-        room = (
-            db.table("rooms")
-            .select(
-                "buyer_id, seller_id, draft_item, draft_price_cents, draft_condition"
-            )
-            .eq("id", room_id)
-            .maybe_single()
-            .execute()
-            or NO_ROW
-        ).data
-
-        if room:
-            ids = [i for i in (room["buyer_id"], room["seller_id"]) if i]
-            names: dict[str, str] = {}
-            if ids:
-                names = {
-                    p["id"]: p["name"]
-                    for p in (
-                        db.table("profiles").select("id, name").in_("id", ids).execute()
-                    ).data
-                    or []
-                }
-
-            cents = room.get("draft_price_cents")
-            instructions = (
-                AEGIS_SYSTEM_PROMPT
-                + "\n\n"
-                + room_context(
-                    buyer_name=names.get(room["buyer_id"] or ""),
-                    seller_name=names.get(room["seller_id"] or ""),
-                    item=room.get("draft_item"),
-                    price_usd=f"{cents / 100:,.2f}" if cents else None,
-                    condition=room.get("draft_condition"),
-                )
-            )
+    instructions = room_instructions(admin(), room_id, channel="voice")
 
     return {
         # `type` is REQUIRED by the GA Realtime API and must survive all the way
