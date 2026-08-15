@@ -70,10 +70,16 @@ export function usePeerAudio(roomId: string, selfId: string) {
   const [activeSource, setActiveSource] = useState<ActiveSource>(null);
   const activeSourceRef = useRef<ActiveSource>(null);
   const floorRafRef = useRef<number | null>(null);
+  /** Gate on the local mic feeding Aegis. 0 = muted. */
+  const micGainRef = useRef<GainNode | null>(null);
+  const aegisAttachedRef = useRef(false);
+  const attachAegisRef = useRef<((s: MediaStream | null) => void) | null>(null);
+  const [remoteMuted, setRemoteMuted] = useState(true);
 
   const pcRef = useRef<RTCPeerConnection | null>(null);
   const channelRef = useRef<RealtimeChannel | null>(null);
   const remoteStreamRef = useRef<MediaStream | null>(null);
+  const localMicRef = useRef<MediaStream | null>(null);
   const roleRef = useRef<PeerRole | null>(null);
 
   // Web Audio graph, host side only.
@@ -123,15 +129,21 @@ export function usePeerAudio(roomId: string, selfId: string) {
   const startHost = useCallback(
     async (localMic: MediaStream, aegisOutput: () => MediaStream | null) => {
       roleRef.current = "HOST";
+      localMicRef.current = localMic;
       setPeerState("waiting");
 
       const ctx = new AudioContext();
       ctxRef.current = ctx;
 
-      // Everything Aegis should hear.
+      // Everything Aegis should hear. The local mic passes through a gain
+      // node so it can be muted without tearing down the graph — muting the
+      // track itself would also mute what the guest hears.
       const mixDest = ctx.createMediaStreamDestination();
       mixDestRef.current = mixDest;
-      ctx.createMediaStreamSource(localMic).connect(mixDest);
+      const micGain = ctx.createGain();
+      micGain.gain.value = 0; // start muted: you unmute to take the floor
+      micGainRef.current = micGain;
+      ctx.createMediaStreamSource(localMic).connect(micGain).connect(mixDest);
 
       // Everything the guest should hear.
       const returnDest = ctx.createMediaStreamDestination();
@@ -183,11 +195,31 @@ export function usePeerAudio(roomId: string, selfId: string) {
         if (ctxRef.current) remoteProbe = makeProbe(ctxRef.current, s);
       };
 
+      /** Wire Aegis's voice into the guest's return path. Safe to call twice. */
+      const attachAegis = (s: MediaStream | null) => {
+        if (!s || aegisAttachedRef.current) return;
+        if (!ctxRef.current || !returnDestRef.current) return;
+        try {
+          ctxRef.current
+            .createMediaStreamSource(s)
+            .connect(returnDestRef.current);
+          aegisAttachedRef.current = true;
+        } catch {
+          /* not attachable yet; a later call will succeed */
+        }
+      };
+      attachAegisRef.current = attachAegis;
+
       const supabase = createClient();
       const channel = supabase.channel(`peer:${roomId}`, {
         config: { broadcast: { self: false } },
       });
       channelRef.current = channel;
+
+      channel.on("broadcast", { event: "floor" }, ({ payload }) => {
+        if (payload.from === selfId) return;
+        setRemoteMuted(Boolean(payload.muted));
+      });
 
       channel.on("broadcast", { event: "guest-offer" }, async ({ payload }) => {
         if (payload.from === selfId) return;
@@ -197,17 +229,11 @@ export function usePeerAudio(roomId: string, selfId: string) {
         const pc = new RTCPeerConnection(ICE);
         pcRef.current = pc;
 
-        // Guest hears Aegis plus the host.
-        const aegis = aegisOutput();
-        if (aegis && ctxRef.current && returnDestRef.current) {
-          try {
-            ctxRef.current
-              .createMediaStreamSource(aegis)
-              .connect(returnDestRef.current);
-          } catch {
-            /* track may not be attachable yet; guest still hears the host */
-          }
-        }
+        // Guest hears Aegis plus the host. Aegis's track usually arrives from
+        // OpenAI *after* this point, so also attach it on arrival (see
+        // attachAegisAudio) — otherwise the guest never hears the arbitrator
+        // at all and only the host does.
+        attachAegis(aegisOutput());
         returnDest.stream
           .getAudioTracks()
           .forEach((t) => pc.addTrack(t, returnDest.stream));
@@ -255,10 +281,34 @@ export function usePeerAudio(roomId: string, selfId: string) {
     [roomId, selfId, signal],
   );
 
+  /** Called by the voice session the moment Aegis's own track arrives. */
+  const attachAegisAudio = useCallback((s: MediaStream | null) => {
+    attachAegisRef.current?.(s);
+  }, []);
+
+  /** Open or close this browser's mic into the negotiation. */
+  const setMuted = useCallback((muted: boolean) => {
+    // Host: gate the mix. Guest: gate the outgoing track.
+    if (micGainRef.current) {
+      micGainRef.current.gain.value = muted ? 0 : 1;
+    }
+    const local = localMicRef.current;
+    if (local && roleRef.current === "GUEST") {
+      local.getAudioTracks().forEach((tr) => (tr.enabled = !muted));
+    }
+    void channelRef.current?.send({
+      type: "broadcast",
+      event: "floor",
+      payload: { from: selfId, muted },
+    });
+  }, [selfId]);
+
   /** GUEST: send our mic to the host and play back what the host returns. */
   const startGuest = useCallback(
     async (localMic: MediaStream) => {
       roleRef.current = "GUEST";
+      localMicRef.current = localMic;
+      localMic.getAudioTracks().forEach((tr) => (tr.enabled = false));
       setPeerState("connecting");
 
       const supabase = createClient();
@@ -292,6 +342,11 @@ export function usePeerAudio(roomId: string, selfId: string) {
         signal("guest-offer", { sdp: offer });
       };
 
+      channel.on("broadcast", { event: "floor" }, ({ payload }) => {
+        if (payload.from === selfId) return;
+        setRemoteMuted(Boolean(payload.muted));
+      });
+
       channel.on("broadcast", { event: "host-answer" }, async ({ payload }) => {
         if (payload.from === selfId) return;
         if (pc.signalingState === "have-local-offer") {
@@ -320,12 +375,15 @@ export function usePeerAudio(roomId: string, selfId: string) {
       peerState,
       peerPresent,
       activeSource,
+      remoteMuted,
+      attachAegisAudio,
+      setMuted,
       activeSourceRef,
       startHost,
       startGuest,
       teardown,
       remoteStream: remoteStreamRef,
     }),
-    [peerState, peerPresent, activeSource, startHost, startGuest, teardown],
+    [peerState, peerPresent, activeSource, remoteMuted, attachAegisAudio, setMuted, startHost, startGuest, teardown],
   );
 }

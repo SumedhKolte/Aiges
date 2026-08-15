@@ -55,6 +55,9 @@ export function useAegisVoice(
   const [speaking, setSpeaking] = useState(false);
   const [challengePhrase, setChallengePhrase] = useState<string | null>(null);
   const [level, setLevel] = useState(0);
+  // Muted by default. Taking the floor is an explicit act, which is what makes
+  // attribution reliable: Aegis is told who unmuted.
+  const [muted, setMuted] = useState(true);
   const [speakers, setSpeakers] = useState<SpeakerReading>({
     distinctSpeakers: 0,
     centroids: [],
@@ -446,6 +449,10 @@ export function useAegisVoice(
       pc.ontrack = (e) => {
         audio.srcObject = e.streams[0];
         aegisStreamRef.current = e.streams[0];
+        // Aegis's voice arrives after the guest has already connected, so it
+        // must be patched into the return path here. Without this the guest
+        // never hears the arbitrator — only the host does.
+        peer.attachAegisAudio(e.streams[0]);
       };
 
       mixed.getAudioTracks().forEach((t) => pc.addTrack(t, mixed));
@@ -463,12 +470,14 @@ export function useAegisVoice(
         heartbeatRef.current = setInterval(() => void seatCall("heartbeat"), 30_000);
         createResponse({
           instructions:
-            "Open the negotiation. In one sentence: you are Aegis, you will " +
-            "hold the funds in escrow, and neither side has to trust the " +
-            "other. Then address the Buyer by name and ask them to state " +
-            "what they want to buy and what they are offering to pay. End " +
-            "your turn with that question. Do not address both parties at " +
-            "once and do not ask an open question to the room.",
+            "Open the negotiation. In one sentence: you are Aegis, you hold " +
+            "the funds in escrow, and neither side has to trust the other. " +
+            "Then explain in one short sentence that each party must unmute " +
+            `to speak. Then address the ${selfLabel} — who is the one ` +
+            "currently unmuted and present — and ask them to state their " +
+            "side of the deal. End your turn with that question. Do NOT " +
+            `address the ${peerLabel} yet; they are still muted and cannot ` +
+            "answer you.",
         });
       };
 
@@ -575,6 +584,40 @@ export function useAegisVoice(
     // a reply on every change of speaker would make Aegis interrupt constantly.
   }, [peer.activeSource, state, mode, selfLabel, peerLabel, send]);
 
+  /**
+   * Take or release the floor.
+   *
+   * Only the unmuted party's audio reaches Aegis, and Aegis is told by name who
+   * just took it. That removes the guesswork entirely: with one live microphone
+   * at a time there is nothing to mis-attribute.
+   */
+  const toggleMic = useCallback(() => {
+    setMuted((wasMuted) => {
+      const nowMuted = !wasMuted;
+      peer.setMuted(nowMuted);
+
+      if (!nowMuted && state === "live") {
+        send({
+          type: "conversation.item.create",
+          item: {
+            type: "message",
+            role: "user",
+            content: [
+              {
+                type: "input_text",
+                text:
+                  `[${selfLabel} has taken the floor and is about to speak. ` +
+                  `Everything you hear until told otherwise is the ${selfLabel}. ` +
+                  `Address your reply to them by name.]`,
+              },
+            ],
+          },
+        });
+      }
+      return nowMuted;
+    });
+  }, [peer, selfLabel, send, state]);
+
   const disconnect = useCallback(() => {
     if (rafRef.current) cancelAnimationFrame(rafRef.current);
     if (heartbeatRef.current) {
@@ -595,6 +638,7 @@ export function useAegisVoice(
     streamRef.current = null;
     setLevel(0);
     pitchesRef.current = [];
+    setMuted(true);
     setSpeaking(false);
     responseActive.current = false;
     pendingResponse.current = null;
@@ -628,6 +672,9 @@ export function useAegisVoice(
     injectUtterance,
     mode,
     speakers,
+    muted,
+    toggleMic,
+    remoteMuted: peer.remoteMuted,
     activeSource: peer.activeSource,
     peerState: peer.peerState,
     peerPresent: peer.peerPresent,

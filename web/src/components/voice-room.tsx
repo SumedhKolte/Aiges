@@ -93,6 +93,9 @@ export function VoiceRoom({
     peerState,
     speakers,
     activeSource,
+    muted,
+    toggleMic,
+    remoteMuted,
   } = useAegisVoice(
     roomId,
     selfId,
@@ -528,12 +531,37 @@ export function VoiceRoom({
 
             <div className="mt-6">
               {live ? (
-                <button
-                  onClick={disconnect}
+                <div className="flex flex-col items-center gap-3">
+                  <button
+                    onClick={toggleMic}
+                    className={`flex items-center gap-2.5 rounded-full border-2 px-6 py-3 text-[15px] font-semibold transition-colors ${
+                      muted
+                        ? "border-[var(--color-line-bright)] bg-[var(--color-panel-2)] text-[var(--color-ink-dim)]"
+                        : "border-[var(--color-aegis)] bg-[var(--color-aegis)]/15 text-[var(--color-aegis)]"
+                    }`}
+                  >
+                    <span
+                      className={`h-2.5 w-2.5 rounded-full ${
+                        muted ? "bg-current" : "animate-pulse-dot bg-current"
+                      }`}
+                    />
+                    {muted ? "Unmute to speak" : "You have the floor"}
+                  </button>
+
+                  <p className="text-[12px] text-[var(--color-ink-faint)]">
+                    {muted
+                      ? "Aegis can be heard by both parties. Unmute when it is your turn."
+                      : "Mute when you finish so the other party can answer."}
+                    {!remoteMuted && muted && " · The other party is speaking."}
+                  </p>
+
+                  <button
+                    onClick={disconnect}
                   className="rounded-lg border border-[var(--color-halt)]/50 bg-[var(--color-halt)]/10 px-5 py-2.5 text-[15px] font-semibold text-[var(--color-halt)] transition-colors hover:bg-[var(--color-halt)]/20"
-                >
-                  End session
-                </button>
+                  >
+                    End session
+                  </button>
+                </div>
               ) : (
                 <PrimaryButton
                   onClick={connect}
