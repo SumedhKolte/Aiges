@@ -17,7 +17,7 @@ from ..prompts import (
     REEL_SCHEMA,
 )
 from ..services.openai_client import chat, chat_json, speak
-from ..supabase_client import admin
+from ..supabase_client import NO_ROW, admin
 
 router = APIRouter(prefix="/reels", tags=["reels"])
 
@@ -38,7 +38,7 @@ async def generate_reel(
         .select("*")
         .eq("id", args.contract_id)
         .maybe_single()
-        .execute()
+        .execute() or NO_ROW
     ).data
     if not contract:
         raise HTTPException(404, "Contract not found")
@@ -55,7 +55,7 @@ async def generate_reel(
         .eq("contract_id", args.contract_id)
         .eq("user_id", user.id)
         .maybe_single()
-        .execute()
+        .execute() or NO_ROW
     ).data
     if existing:
         return _shape(existing, contract)
@@ -65,7 +65,7 @@ async def generate_reel(
         .select("name, trust_score, deals_closed")
         .eq("id", user.id)
         .maybe_single()
-        .execute()
+        .execute() or NO_ROW
     ).data or {}
 
     risk_events = (
@@ -221,7 +221,7 @@ async def reel_voiceover(slug: str) -> Response:
         .select("headline, scenes, user_id")
         .eq("share_slug", slug)
         .maybe_single()
-        .execute()
+        .execute() or NO_ROW
     ).data
     if not reel:
         raise HTTPException(404, "Reel not found")
@@ -231,7 +231,7 @@ async def reel_voiceover(slug: str) -> Response:
         .select("name, trust_score, deals_closed")
         .eq("id", reel["user_id"])
         .maybe_single()
-        .execute()
+        .execute() or NO_ROW
     ).data or {}
 
     facts = "\n".join(
@@ -284,7 +284,7 @@ async def trust_passport(user_id: str) -> dict[str, Any]:
         .select("name, avatar_url, trust_score, deals_closed, volume_cents, created_at")
         .eq("id", user_id)
         .maybe_single()
-        .execute()
+        .execute() or NO_ROW
     ).data
     if not profile:
         raise HTTPException(404, "No such profile")
@@ -335,7 +335,7 @@ async def public_reel(slug: str) -> dict[str, Any]:
         .select("share_slug, headline, scenes, contract_id, user_id")
         .eq("share_slug", slug)
         .maybe_single()
-        .execute()
+        .execute() or NO_ROW
     ).data
     if not reel:
         raise HTTPException(404, "Reel not found")
@@ -345,7 +345,7 @@ async def public_reel(slug: str) -> dict[str, Any]:
         .select("name, trust_score, deals_closed")
         .eq("id", reel["user_id"])
         .maybe_single()
-        .execute()
+        .execute() or NO_ROW
     ).data or {}
 
     # deliberately does not expose contract_id, counterparty, or wallet data

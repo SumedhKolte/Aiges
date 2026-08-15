@@ -13,7 +13,7 @@ from ..config import get_settings
 from ..deps import CurrentUser, current_user
 from ..prompts import VISION_SCHEMA, VISION_SYSTEM_PROMPT, vision_user_prompt
 from ..services.openai_client import chat_json
-from ..supabase_client import admin
+from ..supabase_client import NO_ROW, admin
 
 router = APIRouter(prefix="/vision", tags=["vision"])
 
@@ -37,7 +37,7 @@ async def verify_work(
         .select("*")
         .eq("id", args.contract_id)
         .maybe_single()
-        .execute()
+        .execute() or NO_ROW
     ).data
     if not contract:
         raise HTTPException(404, "Contract not found")

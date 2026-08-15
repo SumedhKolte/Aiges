@@ -7,7 +7,7 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException
 
 from ..deps import CurrentUser, current_user
-from ..supabase_client import admin
+from ..supabase_client import NO_ROW, admin
 
 router = APIRouter(tags=["audit"])
 
@@ -26,7 +26,7 @@ async def settlement_receipt(
     db = admin()
 
     contract = (
-        db.table("contracts").select("*").eq("id", contract_id).maybe_single().execute()
+        db.table("contracts").select("*").eq("id", contract_id).maybe_single().execute() or NO_ROW
     ).data
     if not contract:
         raise HTTPException(404, "Contract not found")
@@ -75,14 +75,14 @@ async def settlement_receipt(
         .select("buyer_claim, seller_bps, buyer_bps, magistrate_ruling, resolved_at")
         .eq("contract_id", contract_id)
         .maybe_single()
-        .execute()
+        .execute() or NO_ROW
     ).data
 
     deliberations = []
     if dispute:
         d = (
             db.table("disputes").select("id").eq("contract_id", contract_id)
-            .maybe_single().execute()
+            .maybe_single().execute() or NO_ROW
         ).data
         if d:
             deliberations = (
@@ -161,7 +161,7 @@ async def counterparty_risk(
         .select("name, trust_score, deals_closed, volume_cents, created_at")
         .eq("id", profile_id)
         .maybe_single()
-        .execute()
+        .execute() or NO_ROW
     ).data
     if not profile:
         raise HTTPException(404, "No such profile")

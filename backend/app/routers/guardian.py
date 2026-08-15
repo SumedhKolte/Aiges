@@ -20,7 +20,7 @@ from ..config import get_settings
 from ..deps import CurrentUser, current_user
 from ..prompts import GUARDIAN_PROMPT, GUARDIAN_SCHEMA
 from ..services.openai_client import chat_json
-from ..supabase_client import admin
+from ..supabase_client import NO_ROW, admin
 
 router = APIRouter(prefix="/guardian", tags=["guardian"])
 
@@ -217,7 +217,7 @@ async def create_invite(
             .select("available_cents")
             .eq("user_id", user.id)
             .maybe_single()
-            .execute()
+            .execute() or NO_ROW
         ).data
         if not wallet or wallet["available_cents"] < price_cents:
             have = (wallet or {}).get("available_cents", 0)
@@ -262,7 +262,7 @@ async def preview_invite(token: str) -> dict[str, Any]:
         .select("*")
         .eq("token", token)
         .maybe_single()
-        .execute()
+        .execute() or NO_ROW
     ).data
     if not inv:
         raise HTTPException(404, "This invitation link is not valid")
@@ -272,7 +272,7 @@ async def preview_invite(token: str) -> dict[str, Any]:
         .select("name, trust_score, deals_closed")
         .eq("id", inv["created_by"])
         .maybe_single()
-        .execute()
+        .execute() or NO_ROW
     ).data or {}
 
     return {

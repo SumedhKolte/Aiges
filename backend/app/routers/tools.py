@@ -18,7 +18,7 @@ from pydantic import BaseModel, Field
 from ..config import get_settings
 from ..deps import CurrentUser, current_user
 from ..services import entropy
-from ..supabase_client import admin
+from ..supabase_client import NO_ROW, admin
 
 router = APIRouter(prefix="/tools", tags=["tools"])
 
@@ -63,7 +63,7 @@ async def create_escrow_contract(
     db = admin()
 
     room = (
-        db.table("rooms").select("*").eq("id", args.room_id).maybe_single().execute()
+        db.table("rooms").select("*").eq("id", args.room_id).maybe_single().execute() or NO_ROW
     ).data
     if not room:
         raise HTTPException(404, "Negotiation room not found")
@@ -129,7 +129,7 @@ async def create_escrow_contract(
         .select("available_cents")
         .eq("user_id", buyer_id)
         .maybe_single()
-        .execute()
+        .execute() or NO_ROW
     ).data
     if not wallet or wallet["available_cents"] < price_cents:
         have = (wallet or {}).get("available_cents", 0)
@@ -365,7 +365,7 @@ async def verify_vocal_challenge(
         .select("*")
         .eq("id", args.challenge_id)
         .maybe_single()
-        .execute()
+        .execute() or NO_ROW
     ).data
     if not row:
         raise HTTPException(404, "Challenge not found")
@@ -431,7 +431,7 @@ async def verify_vocal_challenge(
 
 def _assert_room_member(db: Any, room_id: str, user_id: str) -> dict:
     room = (
-        db.table("rooms").select("*").eq("id", room_id).maybe_single().execute()
+        db.table("rooms").select("*").eq("id", room_id).maybe_single().execute() or NO_ROW
     ).data
     if not room:
         raise HTTPException(404, "Negotiation room not found")

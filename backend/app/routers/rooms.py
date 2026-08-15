@@ -8,7 +8,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
 from ..deps import CurrentUser, current_user
-from ..supabase_client import admin
+from ..supabase_client import NO_ROW, admin
 
 router = APIRouter(tags=["rooms"])
 
@@ -49,7 +49,7 @@ async def join_room(
     code = args.code.strip().upper()
 
     room = (
-        db.table("rooms").select("*").eq("code", code).maybe_single().execute()
+        db.table("rooms").select("*").eq("code", code).maybe_single().execute() or NO_ROW
     ).data
     if not room:
         raise HTTPException(404, "No negotiation found with that code")
@@ -79,7 +79,7 @@ async def my_wallet(user: CurrentUser = Depends(current_user)) -> dict[str, Any]
         .select("available_cents, held_cents")
         .eq("user_id", user.id)
         .maybe_single()
-        .execute()
+        .execute() or NO_ROW
     ).data
     if not wallet:
         raise HTTPException(404, "Wallet not provisioned")

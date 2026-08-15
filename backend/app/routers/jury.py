@@ -16,7 +16,7 @@ from ..prompts import (
     SELLER_ADVOCATE_PROMPT,
 )
 from ..services.openai_client import chat, chat_json
-from ..supabase_client import admin
+from ..supabase_client import NO_ROW, admin
 
 router = APIRouter(prefix="/jury", tags=["jury"])
 
@@ -79,7 +79,7 @@ async def deliberate(
         .select("*")
         .eq("id", args.dispute_id)
         .maybe_single()
-        .execute()
+        .execute() or NO_ROW
     ).data
     if not dispute:
         raise HTTPException(404, "Dispute not found")
@@ -213,7 +213,7 @@ def _load_contract(db: Any, contract_id: str) -> dict:
         .select("*")
         .eq("id", contract_id)
         .maybe_single()
-        .execute()
+        .execute() or NO_ROW
     ).data
     if not contract:
         raise HTTPException(404, "Contract not found")
