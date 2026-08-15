@@ -1,0 +1,215 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="color-scheme" content="light" />
+<title>Aegis — One Page Summary</title>
+<style>
+  @page { size: A4; margin: 12mm 13mm; }
+  * { box-sizing: border-box; }
+  /* Pin to light. Without this a dark-themed browser paints its own dark
+     background behind this deliberately dark-on-white document, and the text
+     disappears on screen even though it would print correctly. */
+  :root { color-scheme: light; }
+  html, body { background: #ffffff; }
+  body {
+    margin: 0;
+    font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    color: #14181f;
+    font-size: 9.1pt;
+    line-height: 1.42;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+  .mono { font-family: "SF Mono", "IBM Plex Mono", Menlo, monospace; }
+
+  header {
+    display: flex; align-items: flex-start; justify-content: space-between;
+    gap: 14px; padding-bottom: 8px; border-bottom: 2px solid #0f766e;
+  }
+  .brand { display: flex; align-items: center; gap: 9px; }
+  .name { font-size: 21pt; font-weight: 700; letter-spacing: -0.03em; line-height: 1; }
+  .tag { margin-top: 3px; font-size: 9.3pt; color: #0f766e; font-weight: 600; }
+  .links { text-align: right; font-size: 7.6pt; line-height: 1.6; color: #475569; }
+  .links a { color: #0f766e; text-decoration: none; }
+  .links strong { color: #14181f; }
+
+  h2 {
+    font-size: 7.6pt; letter-spacing: 0.11em; text-transform: uppercase;
+    color: #64748b; margin: 9px 0 4px; font-weight: 700;
+  }
+  p { margin: 0 0 5px; }
+  .lede { font-size: 9.6pt; }
+
+  .grid3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 9px; }
+  .card {
+    border: 1px solid #d5dde6; border-left: 2.5px solid #0f766e;
+    border-radius: 4px; padding: 7px 8px; background: #fbfdfe;
+  }
+  .card h3 { margin: 0 0 3px; font-size: 8.6pt; font-weight: 700; }
+  .card p { font-size: 8.1pt; margin: 0; color: #334155; }
+
+  .two { display: grid; grid-template-columns: 1.32fr 1fr; gap: 13px; }
+  ul { margin: 0; padding-left: 13px; }
+  li { margin-bottom: 3px; font-size: 8.5pt; }
+
+  .metrics { display: grid; grid-template-columns: repeat(4, 1fr); gap: 7px; margin-top: 3px; }
+  .metric { border: 1px solid #d5dde6; border-radius: 4px; padding: 6px 7px; text-align: center; }
+  .metric .v { font-size: 13pt; font-weight: 700; color: #0f766e; letter-spacing: -0.02em; }
+  .metric .l { font-size: 6.9pt; color: #64748b; text-transform: uppercase; letter-spacing: 0.05em; margin-top: 1px; }
+
+  .stack { font-size: 8.1pt; color: #334155; }
+  .stack b { color: #14181f; }
+
+  footer {
+    margin-top: 9px; padding-top: 6px; border-top: 1px solid #d5dde6;
+    font-size: 7.6pt; color: #64748b; display: flex; justify-content: space-between;
+  }
+  .hl { background: #ecfdf7; border: 1px solid #99e6d5; border-radius: 4px; padding: 6px 8px; }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="brand">
+    <svg width="34" height="34" viewBox="0 0 32 32" fill="none">
+      <path d="M16 2.8 26.3 6.7v8c0 6.4-4.2 11.9-10.3 14.3C9.9 26.6 5.7 21.1 5.7 14.7v-8L16 2.8Z"
+            fill="#e6fffa" stroke="#0f766e" stroke-width="1.9" stroke-linejoin="round"/>
+      <path d="m10.8 15.1 5.2 5 5.2-6.7" stroke="#0f766e" stroke-width="2.5"
+            stroke-linecap="round" stroke-linejoin="round"/>
+    </svg>
+    <div>
+      <div class="name">Aegis</div>
+      <div class="tag">The escrow agent that listens to the deal being made.</div>
+    </div>
+  </div>
+  <div class="links">
+    <div><strong>Demo</strong> <a href="https://aiges-eight.vercel.app">aiges-eight.vercel.app</a></div>
+    <div><strong>Code</strong> <a href="https://github.com/SumedhKolte/aegis">github.com/SumedhKolte/aegis</a></div>
+    <div><strong>API</strong> <a href="https://aiges-g41k.onrender.com/health">aiges-g41k.onrender.com</a></div>
+    <div style="margin-top:2px">Fintech &middot; Security &middot; Voice AI</div>
+  </div>
+</header>
+
+<h2>The problem</h2>
+<p class="lede">
+  Peer-to-peer gig work runs on trust nobody verifies. A freelancer agrees a price in a
+  Fiverr DM, does the work, and hopes. Escrow is too slow and expensive for a $250 job;
+  chat platforms offer zero financial protection. Fraud is conversational — it happens
+  in the negotiation, where no software is watching.
+</p>
+
+<h2>What Aegis does</h2>
+<p class="lede">
+  An autonomous AI voice arbitrator that sits <em>inside</em> the negotiation as a neutral
+  third party. Two people talk. Aegis drafts the escrow contract from what they actually
+  said, holds the funds, catches the manipulation as it is spoken, verifies the delivered
+  work, and settles disputes — with no human ever reading the case.
+</p>
+
+<div class="grid3" style="margin-top:6px">
+  <div class="card">
+    <h3>1 &nbsp;Voice Escrow</h3>
+    <p>Terms extracted live from speech over the OpenAI Realtime API and published to both
+       screens as they are heard, so a misheard price surfaces <em>before</em> money is
+       committed. Funds lock only on two separate spoken agreements.</p>
+  </div>
+  <div class="card">
+    <h3>2 &nbsp;Deception Forensics</h3>
+    <p>Six fraud patterns scored as spoken — off-platform payment, late price change,
+       manufactured urgency, scope creep, spoofing, threats. Past a threshold Aegis
+       interrupts with a Security Halt and refuses to lock.</p>
+  </div>
+  <div class="card">
+    <h3>3 &nbsp;The Trust Reel</h3>
+    <p>A real narrated 1080&times;1920 video with burned-in subtitles, rendered in-browser.
+       Figures are read from the ledger, so a reel <em>cannot</em> advertise a payout that
+       never happened.</p>
+  </div>
+</div>
+
+<div class="two" style="margin-top:9px">
+  <div>
+    <h2>The Vocal Entropy Trap — defeating cloned voices</h2>
+    <p style="font-size:8.5pt">
+      Before funds lock, Aegis issues a randomised phrase from a ~2.3 million phrase space
+      (<span class="mono">"The copper kettle counted nineteen umbrellas"</span>) and measures
+      <b>pure reaction time</b> — from when Aegis stops speaking to when the party starts.
+      A human answers in well under a second. A synthesis pipeline must transcribe, generate
+      and re-render on text it has never seen, and the delay gives it away. The response is
+      scored on <b>phonetic</b> similarity, so an honest mishearing does not fail a real person.
+    </p>
+
+    <h2>Advanced adjudication — the AI Jury</h2>
+    <p style="font-size:8.5pt">
+      Disputes convene three agents: a Buyer's Advocate, a Seller's Advocate, and a Magistrate
+      who issues a binding settlement in <b>integer basis points</b>. A $33.33 contract split
+      70/30 pays $23.33 and $10.00 — the buyer absorbs the rounding remainder, so the ledger
+      nets to exactly zero.
+    </p>
+
+    <h2>Guardian — deals that started somewhere else</h2>
+    <p style="font-size:8.5pt">
+      Most gig deals are agreed on Fiverr or Discord long before anyone considers escrow.
+      Paste the conversation and Aegis runs the same six-pattern analysis, extracts the deal,
+      and converts it into funded escrow via a share link — no voice room, and the
+      counterparty needs no account until they accept. Findings must quote the source
+      verbatim; the backend discards any quote it cannot locate in the pasted text.
+    </p>
+  </div>
+
+  <div>
+    <h2>Engineering that holds up</h2>
+    <ul>
+      <li><b>Money never touches a float.</b> <span class="mono">price_cents</span> is
+          authoritative; <span class="mono">price_usd</span> is a generated Postgres column
+          derived from it, so displayed and settled amounts cannot drift.</li>
+      <li><b>Immutable ledger.</b> Every movement runs through SECURITY DEFINER functions
+          that row-lock, validate and append in one transaction. Triggers reject any UPDATE
+          or DELETE on ledger entries.</li>
+      <li><b>Least privilege.</b> Money functions are revoked from <span class="mono">anon</span>
+          and <span class="mono">authenticated</span>. Only the backend calls them, and it
+          re-validates every argument the model produces.</li>
+      <li><b>Three gates before any lock:</b> risk score below threshold, a passed
+          live-speaker challenge, and real buyer solvency.</li>
+      <li><b>Key safety.</b> The OpenAI key never reaches the browser — WebRTC SDP is
+          proxied through FastAPI.</li>
+      <li><b>Two-party remote voice</b> via peer-to-peer audio bridged through the host and
+          signalled over Supabase Realtime — no SFU.</li>
+    </ul>
+
+    <h2>Measured</h2>
+    <div class="metrics">
+      <div class="metric"><div class="v">95</div><div class="l">scam thread</div></div>
+      <div class="metric"><div class="v">5</div><div class="l">clean thread</div></div>
+      <div class="metric"><div class="v">0</div><div class="l">false positives</div></div>
+      <div class="metric"><div class="v">$0.00</div><div class="l">ledger drift</div></div>
+    </div>
+    <p style="font-size:7.9pt; color:#475569; margin-top:4px">
+      Guardian scored a realistic Fiverr scam at 95 / DO_NOT_PROCEED and a clean negotiation
+      at 5 / SAFE with zero findings. Settlement maths is covered by a self-verifying SQL
+      suite asserting the ledger nets to exactly zero through hold, release and fractional
+      dispute.
+    </p>
+  </div>
+</div>
+
+<div class="hl" style="margin-top:8px">
+  <b>Trying it in 30 seconds.</b> Sign up with any email (or Google) and you receive a
+  <b>$2,500 demonstration balance</b> immediately — no setup, no seed data. Open a room,
+  copy the invite link, and open it in a second browser signed in as another account to run
+  the full two-party flow. Each party unmutes to take the floor, conference-call style, so
+  Aegis always knows who is speaking.
+</div>
+
+<footer>
+  <span class="stack">
+    <b>Stack:</b> Next.js 15 / React 19 (Vercel) &middot; FastAPI (Render) &middot;
+    Supabase Postgres, RLS, Realtime, Storage, pg_cron &middot;
+    OpenAI gpt-realtime-2.1, GPT-4o Vision, gpt-4o-mini-tts
+  </span>
+  <span>Sumedh Kolte &middot; AI for Impact 2026</span>
+</footer>
+
+</body>
+</html>
