@@ -29,6 +29,8 @@ export type Utterance = {
   speaker: "AEGIS" | "PARTY";
   text: string;
   at: number;
+  /** Resolved party name when the floor monitor could attribute it. */
+  label?: string;
 };
 
 /** Tool calls the browser enriches before relaying to the backend. */
@@ -39,7 +41,13 @@ const ROOM_SCOPED = new Set([
   "update_deal_terms",
 ]);
 
-export function useAegisVoice(roomId: string, selfId: string) {
+export function useAegisVoice(
+  roomId: string,
+  selfId: string,
+  /** Who this browser is, and who the counterparty is, for speaker labelling. */
+  selfLabel = "Buyer",
+  peerLabel = "Seller",
+) {
   const [state, setState] = useState<VoiceState>("idle");
   const [mode, setMode] = useState<VoiceMode>(null);
   const [error, setError] = useState<string | null>(null);
@@ -235,8 +243,13 @@ export function useAegisVoice(roomId: string, selfId: string) {
         case "conversation.item.input_audio_transcription.completed": {
           const text = String(evt.transcript ?? "");
           if (text.trim()) {
-            push({ speaker: "PARTY", text });
-            void persist("PARTY", text);
+            // Attribute using whoever held the floor, so the shared transcript
+            // reads "Buyer:" / "Seller:" instead of an anonymous "Party".
+            const src = peer.activeSourceRef.current;
+            const who =
+              src === "LOCAL" ? selfLabel : src === "REMOTE" ? peerLabel : "PARTY";
+            push({ speaker: "PARTY", text, label: who });
+            void persist(who.toUpperCase(), text);
           }
           break;
         }
@@ -302,7 +315,7 @@ export function useAegisVoice(roomId: string, selfId: string) {
         }
       }
     },
-    [handleToolCall, persist, push],
+    [handleToolCall, peer, persist, push, peerLabel, selfLabel],
   );
 
   // --- microphone level + two-speaker analysis -----------------------------
@@ -519,6 +532,49 @@ export function useAegisVoice(roomId: string, selfId: string) {
     [createResponse, persist, push, send, state],
   );
 
+  /**
+   * Tell Aegis who just took the floor.
+   *
+   * The Realtime API accepts a single input stream, so the mixed audio alone
+   * cannot say which of the two people is talking. The host, however, holds
+   * both sources separately and measures them independently — so attribution
+   * is known locally and only needs stating. A short text marker on each change
+   * of speaker gives Aegis what the audio cannot.
+   */
+  const lastAnnounced = useRef<string | null>(null);
+  useEffect(() => {
+    if (state !== "live" || mode !== "HOST") return;
+    const src = peer.activeSource;
+    if (src !== "LOCAL" && src !== "REMOTE" && src !== "BOTH") return;
+
+    const who =
+      src === "BOTH"
+        ? "BOTH parties are talking at once"
+        : `${src === "LOCAL" ? selfLabel : peerLabel} is now speaking`;
+    if (who === lastAnnounced.current) return;
+    lastAnnounced.current = who;
+
+    send({
+      type: "conversation.item.create",
+      item: {
+        type: "message",
+        role: "user",
+        content: [
+          {
+            type: "input_text",
+            text:
+              src === "BOTH"
+                ? "[Floor: both parties are speaking at once. Ask them to " +
+                  "answer one at a time, naming who you want to hear from.]"
+                : `[Floor: ${who}. Attribute the speech that follows to them.]`,
+          },
+        ],
+      },
+    });
+    // Deliberately no response.create — this is context, not a turn. Prompting
+    // a reply on every change of speaker would make Aegis interrupt constantly.
+  }, [peer.activeSource, state, mode, selfLabel, peerLabel, send]);
+
   const disconnect = useCallback(() => {
     if (rafRef.current) cancelAnimationFrame(rafRef.current);
     if (heartbeatRef.current) {
@@ -572,6 +628,7 @@ export function useAegisVoice(roomId: string, selfId: string) {
     injectUtterance,
     mode,
     speakers,
+    activeSource: peer.activeSource,
     peerState: peer.peerState,
     peerPresent: peer.peerPresent,
   };

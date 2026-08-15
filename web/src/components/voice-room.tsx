@@ -92,7 +92,13 @@ export function VoiceRoom({
     mode,
     peerState,
     speakers,
-  } = useAegisVoice(roomId, selfId);
+    activeSource,
+  } = useAegisVoice(
+    roomId,
+    selfId,
+    role === "Seller" ? "Seller" : "Buyer",
+    role === "Seller" ? "Buyer" : "Seller",
+  );
 
   const [risks, setRisks] = useState<RiskEvent[]>([]);
   const [contract, setContract] = useState<Contract | null>(null);
@@ -241,6 +247,9 @@ export function VoiceRoom({
         speaker: s.speaker === "AEGIS" ? ("AEGIS" as const) : ("PARTY" as const),
         text: s.content,
         at: new Date(s.created_at).getTime(),
+        // Segments are now written with the attributed party ("BUYER" /
+        // "SELLER"), so the counterparty's screen shows who said what too.
+        label: s.speaker === "AEGIS" ? undefined : s.speaker,
       }));
     return [...utterances, ...remoteOnly].sort((a, b) => a.at - b.at);
   }, [utterances, remote]);
@@ -482,6 +491,22 @@ export function VoiceRoom({
               </div>
             </div>
 
+            {live && mode === "HOST" && activeSource && (
+              <p className="animate-rise mt-4 text-[13px] font-medium text-[var(--color-aegis)]">
+                {activeSource === "BOTH"
+                  ? "Both parties speaking at once"
+                  : `${
+                      activeSource === "LOCAL"
+                        ? role === "Seller"
+                          ? "Seller"
+                          : "Buyer"
+                        : role === "Seller"
+                          ? "Buyer"
+                          : "Seller"
+                    } has the floor`}
+              </p>
+            )}
+
             <p className="mt-6 text-[15px] font-medium">
               {state === "idle" && "Aegis is ready"}
               {state === "connecting" && "Connecting to the arbitrator…"}
@@ -547,7 +572,9 @@ export function VoiceRoom({
                           : "bg-[var(--color-line)] text-[var(--color-ink-dim)]"
                       }`}
                     >
-                      {u.speaker === "AEGIS" ? "AEGIS" : "PARTY"}
+                      {u.speaker === "AEGIS"
+                        ? "AEGIS"
+                        : (u.label ?? "PARTY").toUpperCase()}
                     </span>
                     <p className="text-[14px] leading-relaxed text-[var(--color-ink)]">
                       {u.text}

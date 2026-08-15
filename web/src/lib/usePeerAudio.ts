@@ -33,9 +33,43 @@ const ICE: RTCConfiguration = {
 export type PeerRole = "HOST" | "GUEST";
 export type PeerState = "idle" | "waiting" | "connecting" | "connected" | "failed";
 
+/** Which microphone currently holds the floor, from the host's point of view. */
+export type ActiveSource = "LOCAL" | "REMOTE" | "BOTH" | null;
+
+// Energy above this counts as speech rather than room noise.
+const SPEECH_FLOOR = 0.055;
+// One side must beat the other by this much to be called the sole speaker;
+// inside the margin we report BOTH rather than guess.
+const DOMINANCE = 1.6;
+// Hold the floor briefly after speech stops so ordinary pauses mid-sentence
+// do not flap the attribution back and forth.
+const FLOOR_HOLD_MS = 700;
+
+/** Rolling loudness probe for one stream. */
+function makeProbe(ctx: AudioContext, stream: MediaStream) {
+  const src = ctx.createMediaStreamSource(stream);
+  const analyser = ctx.createAnalyser();
+  analyser.fftSize = 512;
+  src.connect(analyser);
+  const buf = new Uint8Array(analyser.frequencyBinCount);
+
+  return () => {
+    analyser.getByteTimeDomainData(buf);
+    let sum = 0;
+    for (const v of buf) {
+      const d = (v - 128) / 128;
+      sum += d * d;
+    }
+    return Math.sqrt(sum / buf.length); // RMS, 0..1
+  };
+}
+
 export function usePeerAudio(roomId: string, selfId: string) {
   const [peerState, setPeerState] = useState<PeerState>("idle");
   const [peerPresent, setPeerPresent] = useState(false);
+  const [activeSource, setActiveSource] = useState<ActiveSource>(null);
+  const activeSourceRef = useRef<ActiveSource>(null);
+  const floorRafRef = useRef<number | null>(null);
 
   const pcRef = useRef<RTCPeerConnection | null>(null);
   const channelRef = useRef<RealtimeChannel | null>(null);
@@ -49,6 +83,10 @@ export function usePeerAudio(roomId: string, selfId: string) {
   const playbackRef = useRef<HTMLAudioElement | null>(null);
 
   const teardown = useCallback(() => {
+    if (floorRafRef.current) cancelAnimationFrame(floorRafRef.current);
+    floorRafRef.current = null;
+    activeSourceRef.current = null;
+    setActiveSource(null);
     pcRef.current?.close();
     pcRef.current = null;
     if (channelRef.current) {
@@ -100,6 +138,51 @@ export function usePeerAudio(roomId: string, selfId: string) {
       returnDestRef.current = returnDest;
       ctx.createMediaStreamSource(localMic).connect(returnDest);
 
+      // Attribution. Aegis receives one mixed stream and cannot tell the two
+      // voices apart, but the host holds both sources separately — so who has
+      // the floor is knowable here and merely needs reporting.
+      const localProbe = makeProbe(ctx, localMic);
+      let remoteProbe: (() => number) | null = null;
+      let lastSpokeAt = 0;
+
+      const watchFloor = () => {
+        const local = localProbe();
+        const remote = remoteProbe ? remoteProbe() : 0;
+        const now = performance.now();
+
+        let next: ActiveSource = activeSourceRef.current;
+        const localSpeaking = local > SPEECH_FLOOR;
+        const remoteSpeaking = remote > SPEECH_FLOOR;
+
+        if (localSpeaking || remoteSpeaking) {
+          lastSpokeAt = now;
+          if (localSpeaking && remoteSpeaking) {
+            // Only call it a clash when neither clearly dominates.
+            next =
+              local > remote * DOMINANCE
+                ? "LOCAL"
+                : remote > local * DOMINANCE
+                  ? "REMOTE"
+                  : "BOTH";
+          } else {
+            next = localSpeaking ? "LOCAL" : "REMOTE";
+          }
+        } else if (now - lastSpokeAt > FLOOR_HOLD_MS) {
+          next = null;
+        }
+
+        if (next !== activeSourceRef.current) {
+          activeSourceRef.current = next;
+          setActiveSource(next);
+        }
+        floorRafRef.current = requestAnimationFrame(watchFloor);
+      };
+      watchFloor();
+
+      const attachRemoteProbe = (s: MediaStream) => {
+        if (ctxRef.current) remoteProbe = makeProbe(ctxRef.current, s);
+      };
+
       const supabase = createClient();
       const channel = supabase.channel(`peer:${roomId}`, {
         config: { broadcast: { self: false } },
@@ -132,6 +215,7 @@ export function usePeerAudio(roomId: string, selfId: string) {
         pc.ontrack = (e) => {
           // The guest's voice joins what Aegis hears.
           remoteStreamRef.current = e.streams[0];
+          attachRemoteProbe(e.streams[0]);
           if (ctxRef.current && mixDestRef.current) {
             ctxRef.current
               .createMediaStreamSource(e.streams[0])
@@ -235,11 +319,13 @@ export function usePeerAudio(roomId: string, selfId: string) {
     () => ({
       peerState,
       peerPresent,
+      activeSource,
+      activeSourceRef,
       startHost,
       startGuest,
       teardown,
       remoteStream: remoteStreamRef,
     }),
-    [peerState, peerPresent, startHost, startGuest, teardown],
+    [peerState, peerPresent, activeSource, startHost, startGuest, teardown],
   );
 }
