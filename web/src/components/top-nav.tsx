@@ -36,13 +36,13 @@ export function TopNav({
   }
 
   return (
-    <header className="sticky top-0 z-20 border-b border-[var(--color-line)] bg-[var(--color-void)]/85 backdrop-blur-md">
+    <header className="sticky top-0 z-20 border-b border-[var(--color-line)] bg-[var(--color-void)]/78 shadow-[0_8px_26px_rgb(0_0_0_/_0.14)] backdrop-blur-xl">
       <div className="mx-auto flex max-w-6xl items-center justify-between px-5 py-3.5">
         <div className="flex items-center gap-3">
           {back && (
             <Link
               href={back.href}
-              className="flex items-center gap-1 rounded-lg border border-[var(--color-line)] py-1.5 pr-3 pl-2 text-[13px] font-medium text-[var(--color-ink-dim)] transition-colors hover:border-[var(--color-line-bright)] hover:text-[var(--color-ink)]"
+              className="flex items-center gap-1 rounded-lg border border-[var(--color-line)] py-1.5 pr-3 pl-2 text-[13px] font-medium text-[var(--color-ink-dim)] transition-[border-color,box-shadow,color] hover:border-[var(--color-line-bright)] hover:text-[var(--color-ink)]"
             >
               <BackChevron />
               {back.label}

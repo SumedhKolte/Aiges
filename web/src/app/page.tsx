@@ -42,49 +42,115 @@ export default async function LandingPage() {
         <AegisLogo size={26} />
         <Link
           href={user ? "/dashboard" : "/login"}
-          className="rounded-lg border border-[var(--color-line-bright)] px-3.5 py-2 text-[14px] font-medium text-[var(--color-ink)] transition-colors hover:bg-[var(--color-panel-2)]"
+          className="rounded-lg border border-[var(--color-line-bright)] bg-[var(--color-panel)]/70 px-3.5 py-2 text-[14px] font-medium text-[var(--color-ink)] transition-[transform,background-color] duration-200 hover:-translate-y-px hover:bg-[var(--color-panel-2)]"
         >
           {user ? "Open dashboard" : "Sign in"}
         </Link>
       </header>
 
       {/* ---------------- hero ---------------- */}
-      <section className="py-16 sm:py-24">
-        <div className="inline-flex items-center gap-2 rounded-full border border-[var(--color-line)] bg-[var(--color-panel)] px-3 py-1.5 text-[12px] text-[var(--color-ink-dim)]">
-          <span className="animate-pulse-dot h-1.5 w-1.5 rounded-full bg-[var(--color-aegis)]" />
-          Autonomous voice arbitration
+      <section className="grid gap-10 py-16 sm:py-24 lg:grid-cols-[minmax(0,1.08fr)_minmax(340px,0.72fr)] lg:items-center">
+        <div>
+          <div className="inline-flex items-center gap-2 rounded-full border border-[var(--color-aegis)]/25 bg-[var(--color-aegis)]/8 px-3 py-1.5 text-[11px] font-medium tracking-[0.08em] text-[var(--color-aegis)] uppercase">
+            <span className="animate-pulse-dot h-1.5 w-1.5 rounded-full bg-current" />
+            Autonomous voice arbitration
+          </div>
+
+          <h1 className="mt-6 max-w-3xl text-4xl leading-[1.04] font-semibold tracking-[-0.045em] text-balance sm:text-6xl">
+            The escrow agent that{" "}
+            <span className="text-[var(--color-aegis)]">listens</span> to the deal
+            being made.
+          </h1>
+
+          <p className="mt-6 max-w-2xl text-[17px] leading-relaxed text-[var(--color-ink-dim)]">
+            Peer-to-peer work runs on trust that nobody verifies. Aegis joins
+            the call as a neutral third party: it drafts the contract from what
+            you said, holds the money, catches manipulation, and checks the
+            work before it pays.
+          </p>
+
+          <div className="mt-9 flex flex-wrap items-center gap-3">
+            <Link
+              href={user ? "/dashboard" : "/login"}
+              className="inline-flex items-center justify-center rounded-lg border border-[var(--color-aegis)] bg-[linear-gradient(135deg,var(--color-aegis),#21b9aa)] px-5 py-3 text-[15px] font-semibold text-[var(--color-void)] shadow-[0_8px_20px_rgb(20_201_184_/_0.16)] transition-[transform,box-shadow,opacity] duration-200 hover:-translate-y-px hover:opacity-95"
+            >
+              Start a negotiation
+            </Link>
+            <span className="text-[13px] text-[var(--color-ink-faint)]">
+              Demonstration balance included
+            </span>
+          </div>
+
+          <div className="mt-10 grid max-w-xl grid-cols-3 border-t border-[var(--color-line)] pt-5">
+            <div>
+              <div className="tnum text-[18px] font-semibold text-[var(--color-ink)]">Live</div>
+              <div className="mt-1 text-[11px] tracking-wide text-[var(--color-ink-faint)] uppercase">Term capture</div>
+            </div>
+            <div className="border-x border-[var(--color-line)] px-5">
+              <div className="tnum text-[18px] font-semibold text-[var(--color-ink)]">3-stage</div>
+              <div className="mt-1 text-[11px] tracking-wide text-[var(--color-ink-faint)] uppercase">Verification</div>
+            </div>
+            <div className="pl-5">
+              <div className="tnum text-[18px] font-semibold text-[var(--color-ink)]">24 / 7</div>
+              <div className="mt-1 text-[11px] tracking-wide text-[var(--color-ink-faint)] uppercase">Risk watch</div>
+            </div>
+          </div>
         </div>
 
-        <h1 className="mt-6 max-w-3xl text-4xl leading-[1.08] font-semibold tracking-tight text-balance sm:text-6xl">
-          The escrow agent that{" "}
-          <span className="text-[var(--color-aegis)]">listens</span> to the deal
-          being made.
-        </h1>
+        <aside className="animate-rise panel relative overflow-hidden p-5 sm:p-6">
+          <div className="absolute -top-24 -right-16 h-48 w-48 rounded-full bg-[var(--color-aegis)]/12 blur-3xl" />
+          <div className="relative flex items-center justify-between">
+            <div>
+              <p className="text-[11px] font-semibold tracking-[0.14em] text-[var(--color-ink-faint)] uppercase">Escrow protocol</p>
+              <p className="mt-1 text-[14px] text-[var(--color-ink-dim)]">A protected deal, in progress</p>
+            </div>
+            <span className="inline-flex items-center gap-1.5 rounded-full border border-[var(--color-signal)]/35 bg-[var(--color-signal)]/10 px-2.5 py-1 text-[10px] font-semibold tracking-[0.08em] text-[var(--color-signal)] uppercase">
+              <span className="h-1.5 w-1.5 rounded-full bg-current" />
+              Secured
+            </span>
+          </div>
 
-        <p className="mt-6 max-w-2xl text-[17px] leading-relaxed text-[var(--color-ink-dim)]">
-          Peer-to-peer work runs on trust that nobody verifies. Aegis sits in
-          the call as a neutral third party: it drafts the contract from what
-          you actually said, holds the money, catches the manipulation, and
-          checks the work before it pays.
-        </p>
+          <div className="relative mt-6 rounded-xl border border-[var(--color-line)] bg-[var(--color-void)]/75 p-4 shadow-inner">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <p className="text-[11px] tracking-[0.13em] text-[var(--color-ink-faint)] uppercase">Funds held</p>
+                <p className="tnum mt-1 text-3xl font-semibold tracking-tight">$2,400<span className="opacity-45">.00</span></p>
+              </div>
+              <div className="rounded-lg border border-[var(--color-aegis)]/25 bg-[var(--color-aegis)]/8 px-2.5 py-1.5 text-right">
+                <p className="text-[9px] tracking-[0.12em] text-[var(--color-aegis)] uppercase">Confidence</p>
+                <p className="tnum mt-0.5 text-[15px] font-semibold text-[var(--color-aegis)]">98%</p>
+              </div>
+            </div>
+            <div className="mt-5 h-px bg-[var(--color-line)]" />
+            <p className="mt-4 text-[11px] tracking-[0.12em] text-[var(--color-ink-faint)] uppercase">Release condition</p>
+            <p className="mt-1.5 text-[14px] leading-relaxed text-[var(--color-ink)]">Final website delivered and approved by the buyer.</p>
+          </div>
 
-        <div className="mt-9 flex flex-wrap items-center gap-3">
-          <Link
-            href={user ? "/dashboard" : "/login"}
-            className="rounded-lg bg-[var(--color-aegis)] px-5 py-3 text-[15px] font-semibold text-[var(--color-void)] transition-opacity hover:opacity-90"
-          >
-            Start a negotiation
-          </Link>
-          <span className="text-[13px] text-[var(--color-ink-faint)]">
-            Demonstration balance included
-          </span>
-        </div>
+          <div className="relative mt-5 space-y-3">
+            {[
+              ["Terms captured", "Both parties confirmed", "complete"],
+              ["Voice presence verified", "Entropy challenge passed", "complete"],
+              ["Delivery review", "Awaiting submitted proof", "pending"],
+            ].map(([label, detail, state], index) => (
+              <div key={label} className="flex items-center gap-3">
+                <span className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full border text-[10px] font-semibold ${state === "complete" ? "border-[var(--color-aegis)]/40 bg-[var(--color-aegis)]/10 text-[var(--color-aegis)]" : "border-[var(--color-line-bright)] bg-[var(--color-panel-2)] text-[var(--color-ink-faint)]"}`}>
+                  {state === "complete" ? "✓" : String(index + 1)}
+                </span>
+                <div className="min-w-0">
+                  <p className="text-[13px] font-medium text-[var(--color-ink)]">{label}</p>
+                  <p className="text-[11px] text-[var(--color-ink-faint)]">{detail}</p>
+                </div>
+              </div>
+            ))}
+          </div>
+        </aside>
       </section>
 
       {/* ---------------- pillars ---------------- */}
       <section className="grid gap-4 sm:grid-cols-3">
         {PILLARS.map((p) => (
-          <div key={p.title} className="panel flex flex-col p-5">
+          <div key={p.title} className="panel group flex flex-col p-5">
+            <div className="h-px w-9 bg-[var(--color-aegis)]/60 transition-[width] duration-200 group-hover:w-14" />
             <div className="tnum text-[26px] font-semibold text-[var(--color-aegis)]">
               {p.figure}
             </div>

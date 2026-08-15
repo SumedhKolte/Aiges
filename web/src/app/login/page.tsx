@@ -97,7 +97,7 @@ function LoginForm() {
   }
 
   const field =
-    "w-full rounded-lg border border-[var(--color-line)] bg-[var(--color-void)] px-3.5 py-2.5 text-[15px] text-[var(--color-ink)] placeholder:text-[var(--color-ink-faint)] transition-colors focus:border-[var(--color-aegis)] focus:outline-none";
+    "field";
 
   return (
     <main className="flex min-h-dvh items-center justify-center px-5 py-12">

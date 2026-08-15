@@ -43,16 +43,34 @@ export default async function Dashboard() {
       <TopNav name={name} />
 
       <main className="mx-auto max-w-6xl px-5 py-8">
-        <h1 className="text-[26px] font-semibold tracking-tight">
-          Welcome back, {name.split(" ")[0]}
-        </h1>
-        <p className="mt-1 text-[15px] text-[var(--color-ink-dim)]">
-          Open a room and negotiate out loud. Aegis will hold the money.
-        </p>
+        <section className="flex flex-wrap items-end justify-between gap-5">
+          <div>
+            <div className="inline-flex items-center gap-2 rounded-full border border-[var(--color-aegis)]/25 bg-[var(--color-aegis)]/8 px-2.5 py-1 text-[10px] font-semibold tracking-[0.12em] text-[var(--color-aegis)] uppercase">
+              <span className="animate-pulse-dot h-1.5 w-1.5 rounded-full bg-current" />
+              Secure workspace
+            </div>
+            <h1 className="mt-3 text-[26px] font-semibold tracking-tight">
+              Welcome back, {name.split(" ")[0]}
+            </h1>
+            <p className="mt-1 text-[15px] text-[var(--color-ink-dim)]">
+              Open a room and negotiate out loud. Aegis will hold the money.
+            </p>
+          </div>
+          <div className="hidden items-center gap-3 rounded-xl border border-[var(--color-line)] bg-[var(--color-panel)]/75 px-3.5 py-2.5 text-[12px] text-[var(--color-ink-dim)] shadow-[0_8px_22px_rgb(0_0_0_/_0.12)] sm:flex">
+            <span className="flex h-7 w-7 items-center justify-center rounded-lg border border-[var(--color-signal)]/30 bg-[var(--color-signal)]/10 text-[var(--color-signal)]">
+              ✓
+            </span>
+            <span>
+              <span className="block text-[10px] font-semibold tracking-[0.1em] text-[var(--color-ink-faint)] uppercase">Protection</span>
+              <span className="font-medium text-[var(--color-ink)]">Escrow monitoring active</span>
+            </span>
+          </div>
+        </section>
 
         {/* ---------------- balances ---------------- */}
         <section className="mt-7 grid gap-4 sm:grid-cols-3">
-          <Panel className="p-5">
+          <Panel className="group relative overflow-hidden p-5">
+            <div className="absolute inset-x-5 top-0 h-px bg-[linear-gradient(90deg,transparent,var(--color-aegis),transparent)] opacity-60 transition-opacity duration-200 group-hover:opacity-100" />
             <SectionLabel>Available</SectionLabel>
             <div className="mt-3">
               <Money cents={wallet?.available_cents ?? 0} size="lg" />
@@ -62,7 +80,8 @@ export default async function Dashboard() {
             </p>
           </Panel>
 
-          <Panel className="p-5">
+          <Panel className="group relative overflow-hidden p-5">
+            <div className="absolute inset-x-5 top-0 h-px bg-[linear-gradient(90deg,transparent,var(--color-aegis),transparent)] opacity-60 transition-opacity duration-200 group-hover:opacity-100" />
             <SectionLabel>Held in escrow</SectionLabel>
             <div className="mt-3">
               <Money
@@ -76,7 +95,8 @@ export default async function Dashboard() {
             </p>
           </Panel>
 
-          <Panel className="p-5">
+          <Panel className="group relative overflow-hidden p-5">
+            <div className="absolute inset-x-5 top-0 h-px bg-[linear-gradient(90deg,transparent,var(--color-aegis),transparent)] opacity-60 transition-opacity duration-200 group-hover:opacity-100" />
             <SectionLabel>Trust score</SectionLabel>
             <div className="tnum mt-3 text-4xl font-semibold text-[var(--color-aegis)]">
               {profile?.trust_score ?? 100}
@@ -106,7 +126,14 @@ export default async function Dashboard() {
           <RoomLauncher />
 
           <div>
-            <SectionLabel>Your contracts</SectionLabel>
+            <div className="flex items-center justify-between gap-3">
+              <SectionLabel>Your contracts</SectionLabel>
+              {contracts?.length ? (
+                <span className="tnum text-[11px] text-[var(--color-ink-faint)]">
+                  {contracts.length} active record{contracts.length === 1 ? "" : "s"}
+                </span>
+              ) : null}
+            </div>
             <div className="mt-3 space-y-2.5">
               {!contracts?.length ? (
                 <EmptyState
@@ -118,7 +145,7 @@ export default async function Dashboard() {
                   <Link
                     key={c.id}
                     href={`/contract/${c.id}`}
-                    className="panel flex items-center justify-between gap-4 p-4 transition-colors hover:border-[var(--color-line-bright)]"
+                    className="panel group flex items-center justify-between gap-4 p-4"
                   >
                     <div className="min-w-0">
                       <p className="truncate text-[15px] font-medium text-[var(--color-ink)]">
@@ -135,6 +162,12 @@ export default async function Dashboard() {
                     <div className="flex shrink-0 items-center gap-4">
                       <Money cents={c.price_cents} size="sm" />
                       <StatusPill status={c.status} />
+                      <span
+                        aria-hidden="true"
+                        className="text-[18px] leading-none text-[var(--color-ink-faint)] transition-transform duration-200 group-hover:translate-x-0.5 group-hover:text-[var(--color-aegis)]"
+                      >
+                        →
+                      </span>
                     </div>
                   </Link>
                 ))

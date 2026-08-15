@@ -368,7 +368,7 @@ export function ContractWorkspace({
           ) : (
             <div className="mt-4 space-y-3">
               <textarea
-                className="w-full resize-none rounded-lg border border-[var(--color-line)] bg-[var(--color-void)] px-3.5 py-2.5 text-[15px] text-[var(--color-ink)] placeholder:text-[var(--color-ink-faint)] focus:border-[var(--color-aegis)] focus:outline-none"
+                className="field resize-none"
                 rows={3}
                 placeholder="Describe precisely what fell short of the release condition."
                 value={claim}

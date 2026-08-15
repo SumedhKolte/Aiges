@@ -82,7 +82,7 @@ export function PrimaryButton({
   return (
     <button
       {...props}
-      className={`rounded-lg bg-[var(--color-aegis)] px-4 py-2.5 text-[15px] font-semibold text-[var(--color-void)] transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40 ${className}`}
+      className={`inline-flex items-center justify-center rounded-lg border border-[var(--color-aegis)] bg-[linear-gradient(135deg,var(--color-aegis),#21b9aa)] px-4 py-2.5 text-[15px] font-semibold text-[var(--color-void)] shadow-[0_8px_20px_rgb(20_201_184_/_0.16)] transition-[transform,box-shadow,opacity] duration-200 hover:-translate-y-px hover:opacity-95 disabled:cursor-not-allowed disabled:opacity-40 ${className}`}
     >
       {children}
     </button>
@@ -97,7 +97,7 @@ export function GhostButton({
   return (
     <button
       {...props}
-      className={`rounded-lg border border-[var(--color-line-bright)] bg-[var(--color-panel-2)] px-4 py-2.5 text-[15px] font-medium text-[var(--color-ink)] transition-colors hover:bg-[var(--color-line)] disabled:cursor-not-allowed disabled:opacity-40 ${className}`}
+      className={`inline-flex items-center justify-center rounded-lg border border-[var(--color-line-bright)] bg-[var(--color-panel-2)] px-4 py-2.5 text-[15px] font-medium text-[var(--color-ink)] transition-[transform,background-color,border-color] duration-200 hover:-translate-y-px hover:bg-[var(--color-panel-raised)] disabled:cursor-not-allowed disabled:opacity-40 ${className}`}
     >
       {children}
     </button>
