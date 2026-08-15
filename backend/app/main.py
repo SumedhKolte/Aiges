@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import re
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -25,10 +26,18 @@ app = FastAPI(
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origin_list,
+    allow_origin_regex=settings.cors_origin_regex or None,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# A CORS misconfiguration surfaces in the browser as an opaque network error
+# and in the logs as a bare "OPTIONS ... 400", which says nothing about why.
+# Logging the effective policy at startup makes it diagnosable from the Render
+# log tail alone.
+log.info("CORS exact origins : %s", settings.cors_origin_list or "(none)")
+log.info("CORS origin regex  : %s", settings.cors_origin_regex or "(disabled)")
 
 app.include_router(realtime.router)
 app.include_router(tools.router)
@@ -49,7 +58,21 @@ async def unhandled(request: Request, exc: Exception) -> JSONResponse:
 
 
 @app.get("/health")
-async def health() -> dict[str, object]:
+async def health(request: Request) -> dict[str, object]:
+    """Liveness plus enough config echo to debug a deploy without a shell.
+
+    Reports whether the caller's own Origin would pass CORS, which turns the
+    most common deployment failure from an opaque browser error into a
+    one-request answer. No secrets are exposed — only whether they are present.
+    """
+    origin = request.headers.get("origin")
+    allowed: bool | None = None
+    if origin:
+        allowed = origin in settings.cors_origin_list or bool(
+            settings.cors_origin_regex
+            and re.fullmatch(settings.cors_origin_regex, origin)
+        )
+
     return {
         "status": "ok",
         "models": {
@@ -57,5 +80,16 @@ async def health() -> dict[str, object]:
             "vision": settings.openai_vision_model,
             "jury": settings.openai_jury_model,
             "reel": settings.openai_reel_model,
+        },
+        "cors": {
+            "your_origin": origin,
+            "your_origin_allowed": allowed,
+            "exact_origins": settings.cors_origin_list,
+            "origin_regex": settings.cors_origin_regex or None,
+        },
+        "configured": {
+            "openai_key": bool(settings.openai_api_key),
+            "supabase_service_role_key": bool(settings.supabase_service_role_key),
+            "supabase_jwt_secret": bool(settings.supabase_jwt_secret),
         },
     }

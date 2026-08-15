@@ -29,7 +29,14 @@ class Settings(BaseSettings):
     openai_tts_voice: str = "ash"
 
     # --- Wiring -------------------------------------------------------------
+    # Exact origins, comma separated.
     cors_origins: str = "http://localhost:3000"
+
+    # Vercel mints a fresh hostname for every preview deployment, so an exact
+    # allow-list goes stale the moment you push a branch. This pattern keeps
+    # previews working without opening the API to the whole internet.
+    # Set to "" to disable pattern matching entirely.
+    cors_origin_regex: str = r"https://.*\.vercel\.app"
 
     # --- Risk engine --------------------------------------------------------
     aegis_risk_halt_threshold: int = 70

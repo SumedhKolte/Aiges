@@ -59,8 +59,13 @@ services:
       - key: SUPABASE_JWT_SECRET
         sync: false
 
-      # Set to your Vercel URL after the frontend deploys, e.g.
-      #   https://aiges.vercel.app
-      # Without this the browser cannot call the API at all.
+      # Production Vercel URL. Without this the browser cannot call the API at
+      # all — the preflight comes back "Disallowed CORS origin".
       - key: CORS_ORIGINS
-        sync: false
+        value: https://aiges-eight.vercel.app
+
+      # Vercel mints a new hostname for every preview deployment, so an exact
+      # allow-list goes stale on each branch push. This keeps previews working.
+      # Set it empty to lock the API to the exact origins above only.
+      - key: CORS_ORIGIN_REGEX
+        value: https://.*\.vercel\.app
