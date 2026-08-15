@@ -3,7 +3,11 @@ import { NextResponse, type NextRequest } from "next/server";
 
 type CookieRecord = { name: string; value: string; options?: CookieOptions };
 
-const PROTECTED = ["/dashboard", "/room", "/contract"];
+const PROTECTED = ["/dashboard", "/room", "/contract", "/guardian"];
+
+// The Guardian invite link must be readable by someone who has no account yet —
+// that is the entire point of it. Its own page handles the sign-in prompt.
+const PUBLIC_PREFIXES = ["/guardian/i/"];
 
 export async function middleware(request: NextRequest) {
   let response = NextResponse.next({ request });
@@ -34,7 +38,9 @@ export async function middleware(request: NextRequest) {
 
   const path = request.nextUrl.pathname;
 
-  if (!user && PROTECTED.some((p) => path.startsWith(p))) {
+  const isPublic = PUBLIC_PREFIXES.some((p) => path.startsWith(p));
+
+  if (!user && !isPublic && PROTECTED.some((p) => path.startsWith(p))) {
     const url = request.nextUrl.clone();
     url.pathname = "/login";
     url.searchParams.set("next", path);

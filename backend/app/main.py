@@ -10,7 +10,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from .config import get_settings
-from .routers import audit, jury, realtime, reels, rooms, tools, vision
+from .routers import audit, guardian, jury, realtime, reels, rooms, tools, vision
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s  %(message)s")
 log = logging.getLogger("aegis")
@@ -46,6 +46,7 @@ app.include_router(jury.router)
 app.include_router(reels.router)
 app.include_router(rooms.router)
 app.include_router(audit.router)
+app.include_router(guardian.router)
 
 
 @app.exception_handler(Exception)

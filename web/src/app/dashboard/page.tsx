@@ -122,6 +122,25 @@ export default async function Dashboard() {
         </section>
 
         {/* ---------------- launcher + contracts ---------------- */}
+        <section className="mt-4">
+          <Link
+            href="/guardian"
+            className="panel group flex items-center justify-between gap-4 p-4"
+          >
+            <div>
+              <p className="text-[15px] font-medium text-[var(--color-ink)]">
+                Already negotiating on Fiverr, Upwork or Discord?
+              </p>
+              <p className="mt-1 text-[13px] text-[var(--color-ink-dim)]">
+                Paste the chat. Aegis scans it for fraud and turns it into escrow.
+              </p>
+            </div>
+            <span className="shrink-0 rounded-lg border border-[var(--color-aegis)]/40 bg-[var(--color-aegis)]/10 px-3 py-1.5 text-[13px] font-semibold text-[var(--color-aegis)]">
+              Open Guardian
+            </span>
+          </Link>
+        </section>
+
         <section className="mt-4 grid gap-4 lg:grid-cols-[380px_1fr]">
           <RoomLauncher />
 

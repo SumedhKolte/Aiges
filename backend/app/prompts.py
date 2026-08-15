@@ -328,6 +328,125 @@ MAGISTRATE_SCHEMA = {
 
 
 # =============================================================================
+# Guardian — forensics over a conversation that happened somewhere else
+# =============================================================================
+
+GUARDIAN_PROMPT = """\
+You are Aegis Guardian. You read a conversation copied out of Fiverr, Upwork, \
+Discord, WhatsApp, Telegram or email, and you tell the person who pasted it \
+whether they are about to be defrauded.
+
+# What you are looking for
+Score the conversation against exactly these six patterns:
+  - PRICE_MANIPULATION   : a stated price changes late, especially after the
+                           other side signalled agreement.
+  - OFF_PLATFORM_PAYMENT : any push toward wire, gift cards, crypto, cash, or
+                           "let's take this off the platform". The single most
+                           reliable indicator of fraud in gig work.
+  - URGENCY_COERCION     : manufactured time pressure -- "right now", "before
+                           someone else takes it", "my flight leaves".
+  - IDENTITY_SPOOFING    : claims to be someone else, an assistant "speaking
+                           for" the account owner, or pressure to skip checks.
+  - SCOPE_CREEP          : deliverables quietly expanding after a price is set.
+  - THREAT_LANGUAGE      : intimidation, blackmail, threats of bad reviews or
+                           retaliation.
+
+Quote the EXACT words that triggered each finding. Never paraphrase a quote and
+never invent one -- if you cannot quote it from the text, it is not a finding.
+
+# Severity
+  CRITICAL : an active fraud attempt is underway
+  HIGH     : a strong indicator, the deal should not proceed as written
+  ELEVATED : worth flagging, not disqualifying on its own
+  INFO     : mildly unusual, mentioned for completeness
+
+# Scoring
+risk_score is 0-100 for the conversation as a whole. Weight CRITICAL heavily.
+A single unambiguous off-platform payment request alone justifies 70 or above.
+A clean professional negotiation scores under 15. Do not inflate scores to seem
+useful -- a false alarm on an honest client costs the user real work.
+
+# Extracting the deal
+Separately, pull out the deal itself if one is present: what is being bought,
+the price in US dollars, and what the seller must deliver for payment to be
+released. Use the parties' own words. If a term was never actually stated,
+leave it null rather than guessing -- an invented price would be locked into a
+real escrow contract.
+
+# Your summary
+Two or three sentences, addressed to the person who pasted this, in plain
+language. Say what you found and what they should do. No hedging, no jargon.
+"""
+
+GUARDIAN_SCHEMA = {
+    "type": "json_schema",
+    "json_schema": {
+        "name": "guardian_report",
+        "strict": True,
+        "schema": {
+            "type": "object",
+            "properties": {
+                "risk_score": {"type": "integer"},
+                "verdict": {
+                    "type": "string",
+                    "enum": ["SAFE", "CAUTION", "HIGH_RISK", "DO_NOT_PROCEED"],
+                },
+                "summary": {"type": "string"},
+                "findings": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "quote": {
+                                "type": "string",
+                                "description": "Verbatim from the conversation.",
+                            },
+                            "category": {
+                                "type": "string",
+                                "enum": [
+                                    "PRICE_MANIPULATION",
+                                    "OFF_PLATFORM_PAYMENT",
+                                    "URGENCY_COERCION",
+                                    "IDENTITY_SPOOFING",
+                                    "SCOPE_CREEP",
+                                    "THREAT_LANGUAGE",
+                                ],
+                            },
+                            "severity": {
+                                "type": "string",
+                                "enum": ["INFO", "ELEVATED", "HIGH", "CRITICAL"],
+                            },
+                            "rationale": {"type": "string"},
+                        },
+                        "required": ["quote", "category", "severity", "rationale"],
+                        "additionalProperties": False,
+                    },
+                },
+                "deal": {
+                    "type": "object",
+                    "properties": {
+                        "item_description": {"type": ["string", "null"]},
+                        "price_usd": {"type": ["number", "null"]},
+                        "release_condition": {"type": ["string", "null"]},
+                        "confidence": {"type": "number"},
+                    },
+                    "required": [
+                        "item_description",
+                        "price_usd",
+                        "release_condition",
+                        "confidence",
+                    ],
+                    "additionalProperties": False,
+                },
+            },
+            "required": ["risk_score", "verdict", "summary", "findings", "deal"],
+            "additionalProperties": False,
+        },
+    },
+}
+
+
+# =============================================================================
 # Trust Reel
 # =============================================================================
 

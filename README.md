@@ -136,6 +136,34 @@ $33.33 contract split 70/30 pays $23.33 and $10.00, and the ledger nets to zero.
 These functions are revoked from `anon` and `authenticated`. Only the service
 role — i.e. the backend — can call them.
 
+### Guardian — deals that started somewhere else
+
+Almost every real gig deal is agreed on Fiverr, Upwork, Discord or WhatsApp
+long before anyone thinks about escrow. Guardian meets that reality: paste the
+conversation at `/guardian` and Aegis runs the **same six-pattern forensics**
+the voice arbitrator uses, extracts the deal, and converts it into a funded
+escrow contract — no voice room, and the counterparty does not need an account
+yet.
+
+Two details that make it trustworthy rather than a toy:
+
+- **Quotes are verified against the source.** The model must quote verbatim to
+  raise a finding, and the backend drops any quote it cannot locate in the
+  pasted text. A fabricated quote would discredit the entire report.
+- **Missing terms stay null.** If a price was never actually stated, Guardian
+  leaves it blank rather than guessing — an invented number would be locked
+  into a real escrow contract.
+
+`accept_guardian_invite` creates the contract and locks the escrow in one
+transaction, so a failed funding attempt cannot leave an orphaned contract
+behind. Invites are single-use and expire in seven days.
+
+Measured on a realistic Fiverr scam (off-platform payment push, manufactured
+urgency, scope creep) versus a clean negotiation: **95 / DO_NOT_PROCEED** vs
+**5 / SAFE**, with zero findings on the clean thread. The false-positive
+behaviour matters as much as the detection — a false alarm on an honest client
+costs the user real work.
+
 ### Live term extraction
 
 Aegis calls `update_deal_terms` the moment it learns or revises any of the three
